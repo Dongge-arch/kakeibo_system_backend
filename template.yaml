@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Home Kakeibo System Contributors
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Home Kakeibo API on AWS Lambda
+
+Parameters:
+  HomeKakeiboLayerArn:
+    Type: String
+    Description: ARN of the uploaded Home Kakeibo dependency layer.
+  KakeiboDatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: PostgreSQL connection string used by the Lambda functions.
+  KakeiboDatabaseInitialize:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether Lambda should initialize PostgreSQL schema at startup.
+  KakeiboJwtSecret:
+    Type: String
+    NoEcho: true
+    Description: Secret used to sign login JWTs.
+  KakeiboApiKey:
+    Type: String
+    NoEcho: true
+    Description: API key required in x-api-key for application API requests.
+  FrontendCorsOrigin:
+    Type: String
+    Default: "*"
+    Description: Allowed frontend origin for API Gateway CORS, for example https://example.cloudfront.net.
+  AiReceiptApiUrl:
+    Type: String
+    Default: ""
+    Description: External AI receipt analysis API URL.
+  AiReceiptApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: External AI receipt analysis API key.
+
+Globals:
+  HttpApi:
+    CorsConfiguration:
+      AllowOrigins:
+        - !Ref FrontendCorsOrigin
+      AllowHeaders:
+        - authorization
+        - content-type
+        - x-api-key
+      AllowMethods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 512
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        KAKEIBO_SERVE_STATIC: "false"
+        KAKEIBO_DATABASE_TYPE: "postgresql"
+        KAKEIBO_DATABASE_URL: !Ref KakeiboDatabaseUrl
+        KAKEIBO_DATABASE_INITIALIZE: !Ref KakeiboDatabaseInitialize
+        KAKEIBO_JWT_SECRET: !Ref KakeiboJwtSecret
+        KAKEIBO_API_KEY: !Ref KakeiboApiKey
+        FRONTEND_CORS_ORIGIN: !Ref FrontendCorsOrigin
+        AI_RECEIPT_API_URL: !Ref AiReceiptApiUrl
+        AI_RECEIPT_API_KEY: !Ref AiReceiptApiKey
+    Layers:
+      - !Ref HomeKakeiboLayerArn
+
+Resources:
+  HomeKakeiboApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-api-function
+      Handler: lambda.api_handler.handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  HomeKakeiboReceiptAiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-receipt-ai-function
+      Handler: lambda.receipt_ai_handler.handler
+      CodeUri: dist_lambda/function
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  ReceiptAiFunctionName:
+    Description: Direct invoke Lambda function name for receipt AI analysis
+    Value: !Ref HomeKakeiboReceiptAiFunction

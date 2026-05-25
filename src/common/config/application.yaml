@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Home Kakeibo System Contributors
+
+ai_receipt:
+  url: "https://y0wvkjgkml.execute-api.ap-northeast-1.amazonaws.com/develop/receipt_api"
+  api_key: "j5GnQsMYn8AzwByVxPyC939P2sKBZWs8V3oi7lvg"
+
+api_gateway:
+  api_key: "j5GnQsMYn8AzwByVxPyC939P2sKBZWs8V3oi7lvg"
+
+database:
+  active: cloud
+
+  cloud:
+    type: postgresql
+    # Neon Console の pooled connection string を設定してください。
+    # 例:
+    # postgresql://user:password@ep-xxxx-pooler.ap-southeast-1.aws.neon.tech/dbname?sslmode=require
+    url: ""
+    initialize_schema: true
+
+logging:
+  version: 1
+
+  formatters:
+    custom:
+      format: '%(asctime)s %(name)-35s %(levelname)-5s %(message)s'
+
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: DEBUG
+      formatter: custom
+      stream: ext://sys.stdout
+
+    file:
+      class: logging.handlers.RotatingFileHandler
+      level: DEBUG
+      formatter: custom
+      filename: home-kakeibo.log
+      maxBytes: 1048576
+      backupCount: 3
+      encoding: utf-8
+
+  root:
+    level: INFO
+    handlers: [console, file]

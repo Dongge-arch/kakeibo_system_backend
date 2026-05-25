@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Home Kakeibo System Contributors
+
+ai_receipt:
+  url: ""
+  api_key: ""
+
+api_gateway:
+  api_key: ""
+
+database:
+  active: cloud
+  cloud:
+    type: postgresql
+    url: ""
+    initialize_schema: false
+
+logging:
+  version: 1
+  formatters:
+    custom:
+      format: '%(asctime)s %(name)-35s %(levelname)-5s %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: INFO
+      formatter: custom
+      stream: ext://sys.stdout
+  root:
+    level: INFO
+    handlers: [console]

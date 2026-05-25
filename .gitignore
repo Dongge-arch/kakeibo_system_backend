@@ -1,0 +1,7 @@
+dist_lambda/
+.aws-sam/
+deploy/aws/deploy_aws.env.bat
+*.pyc
+__pycache__/
+*.log
+*.db
