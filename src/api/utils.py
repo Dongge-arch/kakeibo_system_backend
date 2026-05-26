@@ -38,6 +38,22 @@ def normalize_invoice_number(value):
     return f"T{digits}"
 
 
+def normalize_receipt_number(value):
+    """レシート番号を T/A + 13桁 の形式へ正規化する。"""
+    if value is None:
+        return None
+
+    raw = str(value).strip().upper()
+    if not raw:
+        return None
+
+    prefix = raw[0] if raw[0] in ("T", "A") else "T"
+    digits = raw[1:] if raw[0] in ("T", "A") else raw
+    if not digits.isdigit() or len(digits) != 13:
+        return None
+    return f"{prefix}{digits}"
+
+
 def normalize_tax_flag(value):
     """画面から渡された税区分を既存DBの 0 / 1 形式へ変換する。"""
     return 1 if str(value).strip() in ("1", "true", "True", "on") else 0

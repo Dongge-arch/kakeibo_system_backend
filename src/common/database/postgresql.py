@@ -111,6 +111,7 @@ class Postgresql:
         "setting_table",
         "ai_usage_log",
         "ai_receipt_analysis",
+        "recurring_expense",
     }
     _reserved_aliases = {
         # SELECTスコープ付与時に予約語をaliasと誤判定しないための一覧。

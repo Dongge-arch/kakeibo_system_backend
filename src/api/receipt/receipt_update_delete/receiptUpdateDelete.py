@@ -146,7 +146,7 @@ class ReceiptUpdateDelete(BaseRestApi):
 
     def upsert_invoice_registration(self, receipt_info: Dict[str, Any]) -> None:
         invoice_number = receipt_info.get("invoiceRegistrationNumber")
-        if not invoice_number:
+        if not invoice_number or str(invoice_number).upper().startswith("A"):
             return
 
         now_dt = datetime.now()

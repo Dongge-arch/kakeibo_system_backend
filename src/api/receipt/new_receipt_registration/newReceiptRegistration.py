@@ -4,6 +4,7 @@
 
 
 """レシート情報の新規登録API。"""
+import secrets
 from typing import Dict, Any, Optional
 from src.common.base import BaseRestApi
 from src.common.functions.response import response
@@ -77,8 +78,10 @@ class NewReceiptRegistration(BaseRestApi):
                     error_code="1000062",
                     message="receiptDetailCountとreceiptDetailsの数が一致しません。")
         receipt_id = self.create_receipt_id(receipt_info=receipt_info)
+        invoice_number = self.normalize_or_create_receipt_number(receipt_info.get("invoiceRegistrationNumber"))
+        receipt_info["invoiceRegistrationNumber"] = invoice_number
         select_response = self.select_invoice_registration(
-            inv_reg_num=receipt_info.get("invoiceRegistrationNumber"))
+            inv_reg_num=invoice_number)
         if not select_response:
             self.insert_invoice_registration(body=receipt_info)
 
@@ -222,10 +225,14 @@ class NewReceiptRegistration(BaseRestApi):
         Args:
             body (Dict[str, Any]): 登録者情報を含む辞書
         """
+        invoice_number = body.get("invoiceRegistrationNumber")
+        if not invoice_number or str(invoice_number).upper().startswith("A"):
+            return
+
         param = {
             "CRE_PROG":"NewReceiptRegistration",
             "UPD_PROG":"NewReceiptRegistration",
-            "INV_REG_NUM": body.get("invoiceRegistrationNumber"),
+            "INV_REG_NUM": invoice_number,
             "SUP_NAME": body.get("supplierName"),
             "IMG": body.get("supplierImage"),
             "TAX_FLAG": body.get("taxFlag"),
@@ -259,6 +266,34 @@ class NewReceiptRegistration(BaseRestApi):
             Returns:
                 Dict[str, Any]: 取引先マスタ。存在しない場合はNone。
         """
+        if not inv_reg_num or str(inv_reg_num).upper().startswith("A"):
+            return None
         sql = self.database.read_sql("SELECT_INV_REG_NUM", location=__file__)
         result = self.database.select(sql, params={"INV_REG_NUM": inv_reg_num})
         return result[0] if result else None
+
+    def normalize_or_create_receipt_number(self, value: str) -> str:
+        """空欄なら A + 13桁のシステム番号を重複しない形で発行する。"""
+        raw = str(value or "").strip().upper()
+        if raw.startswith("A") and len(raw) == 14 and raw[1:].isdigit():
+            return raw
+        if raw.startswith("T") and len(raw) == 14 and raw[1:].isdigit():
+            return raw
+        if raw.isdigit() and len(raw) == 13:
+            return f"T{raw}"
+
+        for _ in range(20):
+            candidate = f"A{secrets.randbelow(10 ** 13):013d}"
+            rows = self.database.select(
+                """
+                SELECT RET_ID
+                FROM receipt_info
+                WHERE INV_REG_NUM = :INV_REG_NUM
+                  AND DEL_FLAG = 0
+                LIMIT 1
+                """,
+                {"INV_REG_NUM": candidate},
+            )
+            if not rows:
+                return candidate
+        raise Error(status_code=500, error_code="1000062", message="システム番号を発行できませんでした。")

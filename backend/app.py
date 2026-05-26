@@ -38,6 +38,7 @@ from src.api.budget.new_budget_registration.newBudgetRegistration import NewBudg
 from src.api.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
 from src.api.receipt.receipt_reference.receiptReference import ReceiptReference
 from src.api.receipt.receipt_update_delete.receiptUpdateDelete import ReceiptUpdateDelete
+from src.api.receipt.recurring_expense.recurringExpenseApi import RecurringExpenseApi
 from src.api.budget.budget_batch.budgetBatchApi import BudgetBatchApi
 from src.api.income.income.incomeApi import IncomeApi
 from src.api.master.master_data.masterDataApi import MasterDataApi
@@ -45,7 +46,7 @@ from src.api.receipt.ai_receipt.aiReceiptApi import AiReceiptApi
 from src.api.receipt.receipt_export.receiptExport import ReceiptExportService
 from src.api.settings.app_settings.appSettingsApi import AppSettingsApi
 from src.api.settings.user_auth.userAuthApi import UserAuthApi
-from src.api.utils import call_api, json_response, normalize_invoice_number
+from src.api.utils import call_api, json_response, normalize_invoice_number, normalize_receipt_number
 from src.common.auth_context import reset_current_user, set_current_user
 from src.common.auth_token import verify_token
 from src.common.config import APP_CONFIG
@@ -392,10 +393,8 @@ def create_receipt(request: dict = Body(...)):
         request (dict): receiptInfoを含む登録要求。
     """
     receipt_info = (request or {}).get("receiptInfo", {})
-    invoice_number = normalize_invoice_number(receipt_info.get("invoiceRegistrationNumber"))
-    if not invoice_number:
-        return json_response(400, {"errorMessage": "登録番号は T + 13桁の形式で送信してください。"})
-    receipt_info["invoiceRegistrationNumber"] = invoice_number
+    invoice_number = normalize_receipt_number(receipt_info.get("invoiceRegistrationNumber"))
+    receipt_info["invoiceRegistrationNumber"] = invoice_number or ""
     return local_api(NewReceiptRegistration, request, default_status_code=201)
 
 
@@ -411,11 +410,41 @@ def get_receipt(request: dict = Body(...)):
     """
     invoice_number = (request or {}).get("invoiceRegistrationNumber")
     if invoice_number:
-        normalized = normalize_invoice_number(invoice_number)
+        normalized = normalize_receipt_number(invoice_number)
         if not normalized:
-            return json_response(400, {"errorMessage": "登録番号は T を除いた13桁、または T + 13桁で指定してください。"})
+            return json_response(400, {"errorMessage": "登録番号は T/A + 13桁で指定してください。"})
         request["invoiceRegistrationNumber"] = normalized
     return local_api(ReceiptReference, request)
+
+
+@app.get("/recurring-expenses")
+def list_recurring_expenses():
+    """定期出費設定の一覧を取得する。"""
+    return local_api(RecurringExpenseApi, {"action": "list"})
+
+
+@app.post("/recurring-expenses")
+def create_recurring_expense(request: dict = Body(...)):
+    """定期出費設定を登録する。"""
+    return local_api(RecurringExpenseApi, {"action": "create", **(request or {})}, default_status_code=201)
+
+
+@app.put("/recurring-expenses/{rule_id}")
+def update_recurring_expense(rule_id: int, request: dict = Body(...)):
+    """定期出費設定を更新する。"""
+    return local_api(RecurringExpenseApi, {"action": "update", "id": rule_id, **(request or {})})
+
+
+@app.delete("/recurring-expenses/{rule_id}")
+def delete_recurring_expense(rule_id: int):
+    """定期出費設定を削除する。"""
+    return local_api(RecurringExpenseApi, {"action": "delete", "id": rule_id})
+
+
+@app.post("/recurring-expenses/run-due")
+def run_due_recurring_expenses():
+    """ログイン時などに期限到来した定期出費を自動登録する。"""
+    return local_api(RecurringExpenseApi, {"action": "run_due"})
 
 
 @app.put("/receipt/ReceiptUpdateDelete")
@@ -426,6 +455,10 @@ def update_delete_receipt(request: dict = Body(...)):
     Args:
         request (dict): actionと対象レシート情報を含む更新・削除要求。
     """
+    receipt_info = (request or {}).get("receiptInfo") or {}
+    if receipt_info:
+        invoice_number = normalize_receipt_number(receipt_info.get("invoiceRegistrationNumber"))
+        receipt_info["invoiceRegistrationNumber"] = invoice_number or ""
     return local_api(ReceiptUpdateDelete, request)
 
 
