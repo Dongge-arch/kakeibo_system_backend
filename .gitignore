@@ -2,6 +2,7 @@ dist_lambda/
 .aws-sam/
 deploy/aws/deploy_aws.env.bat
 deploy/aws/deploy_aws.env.ps1
+src/common/config/application.yaml
 deploy/aws/*.local.*
 samconfig.toml
 .env

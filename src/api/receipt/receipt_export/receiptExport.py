@@ -200,8 +200,20 @@ class ReceiptExportService:
         total, category_totals, month_totals = self.summary(rows)
         pages = [self.pdf_cover_page(rows, total, category_totals, month_totals)]
         detail_rows = sorted(rows, key=lambda row: (row.get("receiptDate") or "", row.get("supplierName") or ""))
-        for start in range(0, len(detail_rows), 22):
-            pages.append(self.pdf_detail_page(detail_rows[start:start + 22], start, len(detail_rows)))
+        offset = 0
+        while offset < len(detail_rows):
+            page_rows = []
+            used_height = 0
+            while offset < len(detail_rows):
+                row = detail_rows[offset]
+                line_count = len(self.wrap_pdf_text(row.get("itemName") or row.get("category2") or "-", 22))
+                row_height = max(24, 12 + line_count * 11)
+                if page_rows and used_height + row_height > 620:
+                    break
+                page_rows.append((row, line_count, row_height))
+                used_height += row_height
+                offset += 1
+            pages.append(self.pdf_detail_page(page_rows, offset - len(page_rows), len(detail_rows)))
         return self.make_pdf(pages)
 
     def build_pdf_legacy(self, rows):
@@ -287,22 +299,24 @@ class ReceiptExportService:
         self.pdf_text(commands, 36, 800, "明細一覧", 17, color="17324D")
         self.pdf_text(commands, 452, 800, f"{offset + 1}-{offset + len(rows)} / {total_count}", 9, color="64748B")
         headers = ["日付", "時刻", "店舗", "分類", "商品", "金額"]
-        xs = [42, 100, 140, 246, 330, 505]
+        xs = [42, 96, 134, 228, 304, 506]
         self.pdf_rect(commands, 36, 764, 523, 24, fill="EFF6FF", stroke="D8E1EA")
         for x, header in zip(xs, headers):
             self.pdf_text(commands, x, 772, header, 9, color="17324D")
 
         y = 742
-        for index, row in enumerate(rows):
+        for index, (row, _line_count, row_height) in enumerate(rows):
             if index % 2 == 0:
-                self.pdf_rect(commands, 36, y - 6, 523, 25, fill="F8FAFC")
+                self.pdf_rect(commands, 36, y - row_height + 14, 523, row_height, fill="F8FAFC")
+            item_lines = self.wrap_pdf_text(row["itemName"] or row["category2"] or "-", 22)
             self.pdf_text(commands, xs[0], y, self.truncate(row["receiptDate"], 10), 7, color="111827")
             self.pdf_text(commands, xs[1], y, self.truncate(row["receiptTime"] or "-", 5), 7, color="111827")
-            self.pdf_text(commands, xs[2], y, self.truncate(row["supplierName"] or "-", 14), 7, color="111827")
-            self.pdf_text(commands, xs[3], y, self.truncate(row["category1"] or "未分類", 10), 7, color="111827")
-            self.pdf_text(commands, xs[4], y, self.truncate(row["itemName"] or row["category2"] or "-", 18), 7, color="111827")
-            self.pdf_text(commands, xs[5], y, self.format_yen(row["totalPrice"]), 7, color="111827")
-            y -= 26
+            self.pdf_text(commands, xs[2], y, self.truncate(row["supplierName"] or "-", 12), 7, color="111827")
+            self.pdf_text(commands, xs[3], y, self.truncate(row["category1"] or "未分類", 8), 7, color="111827")
+            for line_index, line in enumerate(item_lines):
+                self.pdf_text(commands, xs[4], y - line_index * 11, line, 7, color="111827")
+            self.pdf_text(commands, xs[5], y, self.truncate(self.format_yen(row["totalPrice"]), 10), 7, color="111827")
+            y -= row_height
         return "\n".join(commands)
 
     def pdf_section_title(self, commands, x, y, title):
@@ -365,6 +379,12 @@ class ReceiptExportService:
     def truncate(self, value, limit):
         text = self.text(value)
         return text if len(text) <= limit else text[:limit - 1] + "…"
+
+    def wrap_pdf_text(self, value, limit):
+        text = self.text(value)
+        if not text:
+            return ["-"]
+        return [text[index:index + limit] for index in range(0, len(text), limit)]
 
     def summary(self, rows):
         """出力用データから総額、分類別、月別の集計を作る。"""
