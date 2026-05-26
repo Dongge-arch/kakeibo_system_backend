@@ -33,6 +33,7 @@ class MasterDataApi(BaseRestApi):
             "list_category2": self.list_category2,
             "add_category2": lambda: self.add_category2(body),
             "delete_category2": lambda: self.delete_category2(body),
+            "add_default_categories": lambda: self.add_default_categories(body),
             "supplier_by_invoice": lambda: self.supplier_by_invoice(body),
             "list_invoice": self.list_invoice,
             "delete_invoice": lambda: self.delete_invoice(body),
@@ -124,6 +125,86 @@ class MasterDataApi(BaseRestApi):
             {"CATEGORY1_NAME": category1_name, "CATEGORY2_NAME": category2_name},
         )
         return {"statusCode": 200, "message": "Category2 deleted successfully"}
+
+    def add_default_categories(self, body):
+        """画面から渡された標準分類を、既存分は重複させずに一括追加する。"""
+        category1_items = [self.clean_name(item) for item in body.get("category1", [])]
+        category2_items = body.get("category2", [])
+        salary_items = [self.clean_name(item) for item in body.get("salaryCategories", [])]
+
+        category1_items = [item for item in category1_items if item]
+        salary_items = [item for item in salary_items if item]
+
+        existing_category1 = {
+            row.get("CATEGORY1_NAME")
+            for row in self.database.select("SELECT CATEGORY1_NAME FROM receipt_info_category1 WHERE DEL_FLAG = 0")
+        }
+        existing_category2 = {
+            (row.get("CATEGORY1_NAME"), row.get("CATEGORY2_NAME"))
+            for row in self.database.select("SELECT CATEGORY1_NAME, CATEGORY2_NAME FROM receipt_info_category2 WHERE DEL_FLAG = 0")
+        }
+        existing_salary = {
+            row.get("SAL_CAT")
+            for row in self.database.select("SELECT SAL_CAT FROM salary_info_category WHERE DEL_FLAG = 0")
+        }
+
+        added = {"category1": 0, "category2": 0, "salaryCategories": 0}
+        for name in category1_items:
+            if name in existing_category1:
+                continue
+            self.database.execute(
+                "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (:CATEGORY1_NAME)",
+                {"CATEGORY1_NAME": name},
+            )
+            existing_category1.add(name)
+            added["category1"] += 1
+
+        for item in category2_items:
+            if not isinstance(item, dict):
+                continue
+            category1_name = self.clean_name(item.get("category1_name"))
+            category2_name = self.clean_name(item.get("category2_name"))
+            tax_rate = item.get("tax_rate", 0.1)
+            if not category1_name or not category2_name:
+                continue
+            if category1_name not in existing_category1:
+                self.database.execute(
+                    "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (:CATEGORY1_NAME)",
+                    {"CATEGORY1_NAME": category1_name},
+                )
+                existing_category1.add(category1_name)
+                added["category1"] += 1
+            key = (category1_name, category2_name)
+            if key in existing_category2:
+                continue
+            self.database.execute(
+                """
+                INSERT INTO receipt_info_category2 (CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE)
+                VALUES (:CATEGORY1_NAME, :CATEGORY2_NAME, :TAX_RATE)
+                """,
+                {
+                    "CATEGORY1_NAME": category1_name,
+                    "CATEGORY2_NAME": category2_name,
+                    "TAX_RATE": tax_rate,
+                },
+            )
+            existing_category2.add(key)
+            added["category2"] += 1
+
+        for name in salary_items:
+            if name in existing_salary:
+                continue
+            self.database.execute(
+                "INSERT INTO salary_info_category (SAL_CAT, DEL_FLAG) VALUES (:SAL_CAT, 0)",
+                {"SAL_CAT": name},
+            )
+            existing_salary.add(name)
+            added["salaryCategories"] += 1
+
+        return json_response(200, {"ok": True, "added": added})
+
+    def clean_name(self, value):
+        return "" if value is None else str(value).strip()
 
     def supplier_by_invoice(self, body):
         """インボイス登録番号から取引先名、ロゴ、税区分を取得する。"""

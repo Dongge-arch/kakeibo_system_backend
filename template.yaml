@@ -51,6 +51,10 @@ Globals:
         - authorization
         - content-type
         - x-api-key
+        - x-kakeibo-user-id
+        - x-kakeibo-user-email
+        - x-kakeibo-user-name
+        - x-kakeibo-user-nickname
       AllowMethods:
         - GET
         - POST

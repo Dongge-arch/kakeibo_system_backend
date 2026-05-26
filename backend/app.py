@@ -552,6 +552,17 @@ def add_category2(request: dict = Body(...)):
     return local_api(MasterDataApi, {"action": "add_category2", **(request or {})}, default_status_code=201)
 
 
+@app.post("/receipt/adddefaultcategories")
+def add_default_categories(request: dict = Body(...)):
+    """
+    画面から渡された標準の出費分類・小分類・入金分類を一括追加する。
+
+    Args:
+        request (dict): category1、category2、salaryCategoriesを含む標準分類。
+    """
+    return local_api(MasterDataApi, {"action": "add_default_categories", **(request or {})})
+
+
 @app.put("/receipt/deletecategory2")
 def delete_category2(request: dict = Body(...)):
     """

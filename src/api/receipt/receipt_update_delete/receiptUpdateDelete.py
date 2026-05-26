@@ -142,6 +142,72 @@ class ReceiptUpdateDelete(BaseRestApi):
 
         sql = self.database.read_sql("UPDATE_RECEIPT_INFO", location=__file__)
         self.database.update(sql, params=receipt_info_data)
+        self.upsert_invoice_registration(receipt_info)
+
+    def upsert_invoice_registration(self, receipt_info: Dict[str, Any]) -> None:
+        invoice_number = receipt_info.get("invoiceRegistrationNumber")
+        if not invoice_number:
+            return
+
+        now_dt = datetime.now()
+        params = {
+            "CRE_PROG": "ReceiptUpdateDelete",
+            "UPD_PROG": "ReceiptUpdateDelete",
+            "INV_REG_NUM": invoice_number,
+            "SUP_NAME": receipt_info.get("supplierName"),
+            "IMG": receipt_info.get("supplierImage"),
+            "TAX_FLAG": receipt_info.get("taxFlag"),
+            "CRE_DT": now_dt.strftime("%Y%m%d"),
+            "CRE_TM": now_dt.strftime("%H%M%S"),
+            "UPD_DT": now_dt.strftime("%Y%m%d"),
+            "UPD_TM": now_dt.strftime("%H%M%S"),
+            "DEL_FLAG": 0,
+        }
+
+        update_sql = """
+        UPDATE invoice_registration
+        SET
+            UPD_PROG = :UPD_PROG,
+            UPD_DT = :UPD_DT,
+            UPD_TM = :UPD_TM,
+            SUP_NAME = COALESCE(:SUP_NAME, SUP_NAME),
+            IMG = CASE WHEN :IMG IS NULL OR :IMG = '' THEN IMG ELSE :IMG END,
+            TAX_FLAG = COALESCE(:TAX_FLAG, TAX_FLAG)
+        WHERE INV_REG_NUM = :INV_REG_NUM
+          AND DEL_FLAG = 0
+        """
+        updated_count = self.database.update(update_sql, params=params)
+        if updated_count:
+            return
+
+        insert_sql = """
+        INSERT INTO invoice_registration (
+            CRE_PROG,
+            UPD_PROG,
+            INV_REG_NUM,
+            SUP_NAME,
+            IMG,
+            TAX_FLAG,
+            CRE_DT,
+            CRE_TM,
+            UPD_DT,
+            UPD_TM,
+            DEL_FLAG
+        ) VALUES (
+            :CRE_PROG,
+            :UPD_PROG,
+            :INV_REG_NUM,
+            :SUP_NAME,
+            :IMG,
+            :TAX_FLAG,
+            :CRE_DT,
+            :CRE_TM,
+            :UPD_DT,
+            :UPD_TM,
+            :DEL_FLAG
+        )
+        """
+        self.database.insert(insert_sql, params=params)
 
     def update_receipt_details(self,receipt_id: str , body: Dict[str, Any]) -> None:
         """

@@ -196,6 +196,15 @@ class ReceiptExportService:
                         cell.fill = PatternFill("solid", fgColor="F8FAFC")
 
     def build_pdf(self, rows):
+        """検索結果を見やすい複数ページのPDFレポートに変換する。"""
+        total, category_totals, month_totals = self.summary(rows)
+        pages = [self.pdf_cover_page(rows, total, category_totals, month_totals)]
+        detail_rows = sorted(rows, key=lambda row: (row.get("receiptDate") or "", row.get("supplierName") or ""))
+        for start in range(0, len(detail_rows), 22):
+            pages.append(self.pdf_detail_page(detail_rows[start:start + 22], start, len(detail_rows)))
+        return self.make_pdf(pages)
+
+    def build_pdf_legacy(self, rows):
         """検索結果を簡易PDFへ変換する。"""
         lines = ["レシート検索結果レポート", f"出力日時: {datetime.now().strftime('%Y/%m/%d %H:%M')}"]
         total, _, _ = self.summary(rows)
@@ -234,6 +243,128 @@ class ReceiptExportService:
             output += f"{offset:010d} 00000 n \n".encode("ascii")
         output += f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii")
         return output
+
+    def pdf_cover_page(self, rows, total, category_totals, month_totals):
+        commands = []
+        self.pdf_rect(commands, 0, 0, 595, 842, fill="F8FAFC")
+        self.pdf_rect(commands, 36, 732, 523, 74, fill="17324D")
+        self.pdf_text(commands, 56, 778, "レシート検索結果レポート", 22, color="FFFFFF")
+        self.pdf_text(commands, 56, 754, f"出力日時 {datetime.now().strftime('%Y/%m/%d %H:%M')}", 10, color="DDEAFE")
+
+        x = 36
+        for label, value in [
+            ("明細件数", f"{len(rows):,} 件"),
+            ("合計金額", self.format_yen(total)),
+            ("分類数", f"{len(category_totals):,} 件"),
+        ]:
+            self.pdf_rect(commands, x, 662, 165, 52, fill="FFFFFF", stroke="D8E1EA")
+            self.pdf_text(commands, x + 14, 692, label, 9, color="64748B")
+            self.pdf_text(commands, x + 14, 674, value, 15, color="111827")
+            x += 179
+
+        self.pdf_section_title(commands, 36, 624, "分類別サマリー")
+        y = 596
+        for category, amount in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:10]:
+            self.pdf_text(commands, 48, y, self.truncate(category, 22), 10, color="111827")
+            self.pdf_text(commands, 372, y, self.format_yen(amount), 10, color="111827")
+            width = 150 * (amount / max(total, 1))
+            self.pdf_rect(commands, 48, y - 13, 150, 5, fill="E2E8F0")
+            self.pdf_rect(commands, 48, y - 13, max(width, 4), 5, fill="2563EB")
+            y -= 27
+
+        self.pdf_section_title(commands, 316, 624, "月別サマリー")
+        y = 596
+        for month, amount in sorted(month_totals.items())[-10:]:
+            self.pdf_text(commands, 328, y, month, 10, color="111827")
+            self.pdf_text(commands, 452, y, self.format_yen(amount), 10, color="111827")
+            y -= 22
+
+        return "\n".join(commands)
+
+    def pdf_detail_page(self, rows, offset, total_count):
+        commands = []
+        self.pdf_rect(commands, 0, 0, 595, 842, fill="FFFFFF")
+        self.pdf_text(commands, 36, 800, "明細一覧", 17, color="17324D")
+        self.pdf_text(commands, 452, 800, f"{offset + 1}-{offset + len(rows)} / {total_count}", 9, color="64748B")
+        headers = ["日付", "時刻", "店舗", "分類", "商品", "金額"]
+        xs = [42, 100, 140, 246, 330, 505]
+        self.pdf_rect(commands, 36, 764, 523, 24, fill="EFF6FF", stroke="D8E1EA")
+        for x, header in zip(xs, headers):
+            self.pdf_text(commands, x, 772, header, 9, color="17324D")
+
+        y = 742
+        for index, row in enumerate(rows):
+            if index % 2 == 0:
+                self.pdf_rect(commands, 36, y - 6, 523, 25, fill="F8FAFC")
+            self.pdf_text(commands, xs[0], y, self.truncate(row["receiptDate"], 10), 7, color="111827")
+            self.pdf_text(commands, xs[1], y, self.truncate(row["receiptTime"] or "-", 5), 7, color="111827")
+            self.pdf_text(commands, xs[2], y, self.truncate(row["supplierName"] or "-", 14), 7, color="111827")
+            self.pdf_text(commands, xs[3], y, self.truncate(row["category1"] or "未分類", 10), 7, color="111827")
+            self.pdf_text(commands, xs[4], y, self.truncate(row["itemName"] or row["category2"] or "-", 18), 7, color="111827")
+            self.pdf_text(commands, xs[5], y, self.format_yen(row["totalPrice"]), 7, color="111827")
+            y -= 26
+        return "\n".join(commands)
+
+    def pdf_section_title(self, commands, x, y, title):
+        self.pdf_text(commands, x, y, title, 13, color="17324D")
+        self.pdf_line(commands, x, y - 8, x + 220, y - 8, color="D8E1EA")
+
+    def pdf_text(self, commands, x, y, text, size=10, color="111827"):
+        r, g, b = self.pdf_color(color)
+        commands.append(f"BT /F1 {size} Tf {r:.3f} {g:.3f} {b:.3f} rg 1 0 0 1 {x} {y} Tm {self.pdf_hex(text)} Tj ET")
+
+    def pdf_rect(self, commands, x, y, width, height, fill=None, stroke=None):
+        if fill:
+            r, g, b = self.pdf_color(fill)
+            commands.append(f"{r:.3f} {g:.3f} {b:.3f} rg {x} {y} {width} {height} re f")
+        if stroke:
+            r, g, b = self.pdf_color(stroke)
+            commands.append(f"{r:.3f} {g:.3f} {b:.3f} RG {x} {y} {width} {height} re S")
+
+    def pdf_line(self, commands, x1, y1, x2, y2, color="D8E1EA"):
+        r, g, b = self.pdf_color(color)
+        commands.append(f"{r:.3f} {g:.3f} {b:.3f} RG {x1} {y1} m {x2} {y2} l S")
+
+    def pdf_color(self, hex_color):
+        value = hex_color.lstrip("#")
+        return tuple(int(value[index:index + 2], 16) / 255 for index in (0, 2, 4))
+
+    def make_pdf(self, page_streams):
+        page_w, page_h = 595, 842
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"",
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /HeiseiKakuGo-W5 /Encoding /UniJIS-UCS2-H /DescendantFonts [4 0 R] >>",
+            b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /HeiseiKakuGo-W5 /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /DW 1000 >>",
+        ]
+        page_refs = []
+        for page in page_streams:
+            stream = page.encode("utf-8")
+            content_ref = len(objects) + 1
+            objects.append(b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream")
+            page_ref = len(objects) + 1
+            page_refs.append(page_ref)
+            objects.append(
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Resources << /Font << /F1 3 0 R >> >> /Contents {content_ref} 0 R >>".encode("ascii")
+            )
+        kids = " ".join(f"{ref} 0 R" for ref in page_refs)
+        objects[1] = f"<< /Type /Pages /Kids [{kids}] /Count {len(page_refs)} >>".encode("ascii")
+
+        output = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+        offsets = [0]
+        for index, obj in enumerate(objects, start=1):
+            offsets.append(len(output))
+            output += f"{index} 0 obj\n".encode("ascii") + obj + b"\nendobj\n"
+        xref = len(output)
+        output += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii")
+        for offset in offsets[1:]:
+            output += f"{offset:010d} 00000 n \n".encode("ascii")
+        output += f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii")
+        return output
+
+    def truncate(self, value, limit):
+        text = self.text(value)
+        return text if len(text) <= limit else text[:limit - 1] + "…"
 
     def summary(self, rows):
         """出力用データから総額、分類別、月別の集計を作る。"""

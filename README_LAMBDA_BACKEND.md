@@ -1,64 +1,135 @@
-# Home Kakeibo Lambda Backend
+# Home Kakeibo Lambda バックエンド
 
-このフォルダーは Lambda / API Gateway 用のバックエンド専用コードです。
+このフォルダは、家計簿アプリのバックエンドだけを独立して更新・ビルド・デプロイするためのフォルダです。API Gateway + Lambda + PostgreSQL を前提にしています。SQLite 用の運用は行いません。
 
-- `lambda/`: Lambda の起動入口だけを置きます。関数 zip にはこの handler だけが入ります。
-- `backend/`: FastAPI アプリ本体です。Lambda Layer に入ります。
-- `src/`: 業務 API、DB、認証、共通ロジックです。Lambda Layer に入ります。
-- `template.yaml`: AWS SAM テンプレートです。
-- `deploy/aws/deploy_aws.bat`: layer 作成、handler zip 作成、`sam deploy` を実行します。
+## 役割
 
-## デプロイ前の設定
+- フロントエンドから呼ばれる REST API を提供します。
+- ユーザー登録、ログイン、パスワード再設定、レシート、入金、カテゴリ、予算、設定、AI 利用状況を処理します。
+- データは PostgreSQL に保存します。
+- Lambda の起動関数は薄く保ち、共通コードや API 実装は Layer に含めます。
 
-`deploy\aws\deploy_aws.env.bat` を作成し、AWS / DB / API key を設定します。
+## フォルダ構成
 
-```bat
-set "AWS_PROFILE=receipt-dev"
-set "AWS_REGION=ap-northeast-1"
-set "STACK_NAME=home-kakeibo-api"
-set "LAYER_NAME=home-kakeibo-layer"
-set "KAKEIBO_DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require"
-set "KAKEIBO_DATABASE_INITIALIZE=false"
-set "KAKEIBO_JWT_SECRET=replace-with-a-long-random-secret"
-set "KAKEIBO_API_KEY=replace-with-a-long-random-api-key"
-set "FRONTEND_CORS_ORIGIN=*"
+```text
+home_kakeibo_lambda_backend/
+  backend/                       Lambda 起動関数
+  src/                           API 実装、共通処理、DB 接続
+  lambda/                        Layer 作成用ファイル
+  deploy/aws/                    AWS デプロイ用スクリプトと設定例
+  template.yaml                  SAM/CloudFormation テンプレート
+  deploy_backend.bat             バックエンド一括デプロイ
+  README_LAMBDA_BACKEND.md       この説明書
 ```
+
+## 必要な環境
+
+- AWS CLI
+- AWS SAM CLI
+- Python
+- PostgreSQL
+- デプロイ先 AWS アカウントの認証情報
+
+AWS 認証情報はこのフォルダに直接置かず、AWS CLI の profile、環境変数、または安全な秘密情報管理で扱ってください。
+
+## 環境設定
+
+`deploy/aws/deploy_aws.env.example.bat` を参考にして、ローカル用の `deploy/aws/deploy_aws.env.bat` を作成します。
+
+設定する主な値は以下です。
+
+- AWS region
+- スタック名
+- Lambda 関数名
+- Layer 名
+- API Gateway 設定
+- PostgreSQL 接続情報
+- CORS 許可オリジン
+- 認証・API key 関連設定
+
+`deploy_aws.env.bat` は秘密情報を含むため Git 管理対象外です。
 
 ## デプロイ
 
-```bat
-deploy_backend.bat
+```powershell
+cd C:\Users\董 昊哲\Desktop\home_kakeibo_lambda_backend
+.\deploy_backend.bat
 ```
 
-デプロイ後、CloudFormation output の `ApiUrl` をフロントエンド側の `frontend-config.json` に設定します。
+デプロイ後、API Gateway の URL をフロントエンド設定に反映します。
 
-## Lambda Layer と関数 zip
+## Lambda と Layer の考え方
 
-現在の構成では、Lambda 関数本体は起動 handler だけです。
+この構成では、Lambda 起動関数にはリクエストを受けてアプリ本体へ渡す最小限のコードだけを置きます。API 実装、共通処理、DB 接続、業務ロジックは Layer 側に入れます。
 
-- 関数 zip: `lambda/__init__.py`, `lambda/api_handler.py`, `lambda/receipt_ai_handler.py`
-- Layer: Python 依存ライブラリ、`backend/`, `src/`
+更新時の基本方針は以下です。
 
-バックエンドの処理を更新した場合は、再度 `deploy_backend.bat` を実行してください。新しい layer version が発行され、固定名の Lambda 関数へ反映されます。
+- 起動関数だけ変更した場合: Lambda 関数を更新
+- API 実装や共通処理を変更した場合: Layer を作成し直して Lambda に紐づけ
+- `template.yaml` を変更した場合: スタックを再デプロイ
 
-## 固定 Lambda 関数名
+## データベース
 
-SAM テンプレートでは次の固定名を使います。
+バックエンドは PostgreSQL 前提です。テーブル定義、SQL、DB 接続は PostgreSQL 用に統一します。SQLite の DB ファイルや SQLite 専用 SQL は使用しません。
 
-- API: `home-kakeibo-api-function`
-- Receipt AI: `home-kakeibo-receipt-ai-function`
+レシート更新 API は、レシート本体だけでなく、場所・店舗情報を持つ `invoice_registration` も更新します。未登録のインボイス番号が来た場合は新規登録します。
 
-CloudFormation のランダムな物理名ではなく、AWS コンソール上でも見つけやすい名前になります。
+## フロントエンドとの接続
 
-## S3 / CloudFront について
+フロントエンド側では以下を設定します。
 
-デスクトップ EXE で使う場合、S3 と CloudFront は不要です。EXE はローカルで React の静的ファイルを配信し、Lambda API を直接呼びます。
+- `apiBaseUrl`: API Gateway の URL
+- `apiKey`: API Gateway で必要な場合のみ
+- CloudFront ドメインを使う場合: CORS 許可オリジンに CloudFront ドメインを追加
 
-Web 版として公開したい場合だけ、S3 には `frontend-react/dist` の中身を保存します。
+未ログイン時は API 操作を制限するため、フロントエンドとバックエンドの両方でユーザー情報・認証状態を確認します。
 
-- `index.html`
-- `config.js`
-- `assets/*.js`
-- `assets/*.css`
+## セキュリティ
 
-CloudFront はその S3 静的サイトを配信するための CDN です。バックエンドの Lambda コードや DB データを S3 に置くものではありません。
+次のファイルは Git に入れないでください。
+
+- `deploy/aws/deploy_aws.env.bat`
+- `.env`、`.env.*`
+- AWS 認証情報
+- API key、DB パスワード、JWT secret を含むファイル
+- 秘密鍵、証明書、pem/key/pfx/p12
+- ローカル DB、ログ、ビルド成果物
+
+`.gitignore` に登録済みですが、デプロイ前後に `git status` で必ず確認してください。
+
+## 動作確認
+
+構文確認:
+
+```powershell
+python -m py_compile backend\app.py src\api\receipt\receipt_update_delete\receiptUpdateDelete.py
+```
+
+主な確認観点:
+
+- ログインできる
+- 未ログイン時に操作できない
+- レシート登録・更新・削除ができる
+- レシート更新時に店舗名、インボイス番号、税区分が更新される
+- 入金登録ができる
+- カテゴリと予算が取得・保存できる
+- CloudFront から API を呼べる
+
+## よくある問題
+
+### fetch failed または API error
+
+- Lambda が最新デプロイになっているか確認してください。
+- API Gateway の URL がフロントエンド設定と一致しているか確認してください。
+- CORS に CloudFront ドメインが入っているか確認してください。
+- API key が必要な API で key が不足していないか確認してください。
+
+### DB に書けるが画面に出ない
+
+- 登録時のユーザー ID と取得時のユーザー ID が一致しているか確認してください。
+- フロントエンドが headers にユーザー情報を付与しているか確認してください。
+- PostgreSQL の `del_flag`、日付形式、カテゴリ ID/名称の整合性を確認してください。
+
+### 更新したのに Lambda の挙動が変わらない
+
+Layer の更新漏れ、Lambda への Layer 紐づけ漏れ、または CloudFormation スタック未更新の可能性があります。`deploy_backend.bat` を再実行し、AWS Console で Lambda の最終更新日時を確認してください。
