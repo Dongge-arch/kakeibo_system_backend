@@ -206,8 +206,8 @@ class ReceiptExportService:
             used_height = 0
             while offset < len(detail_rows):
                 row = detail_rows[offset]
-                line_count = len(self.wrap_pdf_text(row.get("itemName") or row.get("category2") or "-", 22))
-                row_height = max(24, 12 + line_count * 11)
+                line_count = len(self.wrap_pdf_text(row.get("itemName") or row.get("category2") or "-", 370, 7))
+                row_height = max(44, 28 + line_count * 11)
                 if page_rows and used_height + row_height > 620:
                     break
                 page_rows.append((row, line_count, row_height))
@@ -298,24 +298,35 @@ class ReceiptExportService:
         self.pdf_rect(commands, 0, 0, 595, 842, fill="FFFFFF")
         self.pdf_text(commands, 36, 800, "明細一覧", 17, color="17324D")
         self.pdf_text(commands, 452, 800, f"{offset + 1}-{offset + len(rows)} / {total_count}", 9, color="64748B")
-        headers = ["日付", "時刻", "店舗", "分類", "商品", "金額"]
-        xs = [42, 96, 134, 228, 304, 506]
+        columns = [
+            ("日付", 48, 56),
+            ("時間", 112, 34),
+            ("店舗", 154, 102),
+            ("種類", 266, 190),
+            ("金額", 486, 62),
+        ]
         self.pdf_rect(commands, 36, 764, 523, 24, fill="EFF6FF", stroke="D8E1EA")
-        for x, header in zip(xs, headers):
+        for header, x, _width in columns:
             self.pdf_text(commands, x, 772, header, 9, color="17324D")
 
         y = 742
         for index, (row, _line_count, row_height) in enumerate(rows):
             if index % 2 == 0:
                 self.pdf_rect(commands, 36, y - row_height + 14, 523, row_height, fill="F8FAFC")
-            item_lines = self.wrap_pdf_text(row["itemName"] or row["category2"] or "-", 22)
-            self.pdf_text(commands, xs[0], y, self.truncate(row["receiptDate"], 10), 7, color="111827")
-            self.pdf_text(commands, xs[1], y, self.truncate(row["receiptTime"] or "-", 5), 7, color="111827")
-            self.pdf_text(commands, xs[2], y, self.truncate(row["supplierName"] or "-", 12), 7, color="111827")
-            self.pdf_text(commands, xs[3], y, self.truncate(row["category1"] or "未分類", 8), 7, color="111827")
+            item_lines = self.wrap_pdf_text(row["itemName"] or row["category2"] or "-", 370, 7)
+            category = " / ".join([value for value in [row["category1"], row["category2"]] if value]) or "未分類"
+            values = [
+                row["receiptDate"] or "-",
+                row["receiptTime"] or "-",
+                row["supplierName"] or "インボイスなし",
+                category,
+                self.format_yen(row["totalPrice"]),
+            ]
+            for value, (_header, x, width) in zip(values, columns):
+                self.pdf_text(commands, x, y, self.fit_pdf_text(value, width, 7), 7, color="111827")
+            self.pdf_text(commands, 48, y - 15, "商品", 6, color="64748B")
             for line_index, line in enumerate(item_lines):
-                self.pdf_text(commands, xs[4], y - line_index * 11, line, 7, color="111827")
-            self.pdf_text(commands, xs[5], y, self.truncate(self.format_yen(row["totalPrice"]), 10), 7, color="111827")
+                self.pdf_text(commands, 80, y - 15 - line_index * 11, line, 7, color="111827")
             y -= row_height
         return "\n".join(commands)
 
@@ -380,11 +391,40 @@ class ReceiptExportService:
         text = self.text(value)
         return text if len(text) <= limit else text[:limit - 1] + "…"
 
-    def wrap_pdf_text(self, value, limit):
+    def wrap_pdf_text(self, value, max_width, size=10):
         text = self.text(value)
         if not text:
             return ["-"]
-        return [text[index:index + limit] for index in range(0, len(text), limit)]
+        lines = []
+        current = ""
+        for char in text:
+            candidate = current + char
+            if current and self.pdf_text_width(candidate, size) > max_width:
+                lines.append(current)
+                current = char
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        return lines or ["-"]
+
+    def fit_pdf_text(self, value, max_width, size=10):
+        text = self.text(value)
+        if not text or self.pdf_text_width(text, size) <= max_width:
+            return text
+        marker = "..."
+        fitted = ""
+        for char in text:
+            if self.pdf_text_width(fitted + char + marker, size) > max_width:
+                break
+            fitted += char
+        return fitted + marker if fitted else marker
+
+    def pdf_text_width(self, value, size=10):
+        width = 0
+        for char in self.text(value):
+            width += size * (0.55 if ord(char) < 128 else 1.0)
+        return width
 
     def summary(self, rows):
         """出力用データから総額、分類別、月別の集計を作る。"""

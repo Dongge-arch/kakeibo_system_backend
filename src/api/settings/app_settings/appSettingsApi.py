@@ -80,7 +80,8 @@ class AppSettingsApi(BaseRestApi):
             "sunrise": row_value(row, "sunrise", "SUNRISE", default="06:00") or "06:00",
             "sunset": row_value(row, "sunset", "SUNSET", default="18:00") or "18:00",
             "largeTextMode": bool(extra.get("largeTextMode", False)),
-            "colorTheme": extra.get("colorTheme", "indigo"),
+            "colorTheme": extra.get("colorTheme", "kakeibo"),
+            "language": extra.get("language", "ja"),
         }
 
     def save_settings(self, body):
@@ -96,7 +97,8 @@ class AppSettingsApi(BaseRestApi):
         extra = parse_json_object(row_value(rows[0], "BUT_CAT", "but_cat")) if rows else {}
         extra.update({
             "largeTextMode": bool(body.get("largeTextMode", False)),
-            "colorTheme": body.get("colorTheme") or "indigo",
+            "colorTheme": body.get("colorTheme") or "kakeibo",
+            "language": body.get("language") or "ja",
         })
         ymd, hms = now_ymd_hms()
         self.database.insert(
