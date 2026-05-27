@@ -57,7 +57,7 @@ class MasterDataApi(BaseRestApi):
 
     def add_category1(self, body):
         """レシート大分類を追加する。"""
-        name = body.get("category1_name")
+        name = body.get("category1Name") or body.get("category1_name")
         if not name:
             return {"statusCode": 400, "error": "category1_name is required"}
         self.database.execute(
@@ -68,7 +68,7 @@ class MasterDataApi(BaseRestApi):
 
     def delete_category1(self, body):
         """レシート大分類を論理削除する。"""
-        name = body.get("category1_name")
+        name = body.get("category1Name") or body.get("category1_name")
         if not name:
             return {"statusCode": 400, "error": "category1_name is required"}
         self.database.execute(
@@ -92,9 +92,9 @@ class MasterDataApi(BaseRestApi):
 
     def add_category2(self, body):
         """レシート小分類を大分類・税率と一緒に追加する。"""
-        category2_name = body.get("category2_name")
-        category1_name = body.get("category1_name")
-        tax_rate = body.get("tax_rate", 0.1)
+        category2_name = body.get("category2Name") or body.get("category2_name")
+        category1_name = body.get("category1Name") or body.get("category1_name")
+        tax_rate = body.get("taxRate", body.get("tax_rate", 0.1))
         if not category2_name or not category1_name:
             return {"statusCode": 400, "error": "category1_name and category2_name are required"}
         self.database.execute(
@@ -112,8 +112,8 @@ class MasterDataApi(BaseRestApi):
 
     def delete_category2(self, body):
         """指定した大分類・小分類の組み合わせを論理削除する。"""
-        category2_name = body.get("category2_name")
-        category1_name = body.get("category1_name")
+        category2_name = body.get("category2Name") or body.get("category2_name")
+        category1_name = body.get("category1Name") or body.get("category1_name")
         if not category2_name or not category1_name:
             return {"statusCode": 400, "error": "category1_name and category2_name are required"}
         self.database.execute(
@@ -162,9 +162,9 @@ class MasterDataApi(BaseRestApi):
         for item in category2_items:
             if not isinstance(item, dict):
                 continue
-            category1_name = self.clean_name(item.get("category1_name"))
-            category2_name = self.clean_name(item.get("category2_name"))
-            tax_rate = item.get("tax_rate", 0.1)
+            category1_name = self.clean_name(item.get("category1Name") or item.get("category1_name"))
+            category2_name = self.clean_name(item.get("category2Name") or item.get("category2_name"))
+            tax_rate = item.get("taxRate", item.get("tax_rate", 0.1))
             if not category1_name or not category2_name:
                 continue
             if category1_name not in existing_category1:
@@ -290,7 +290,7 @@ class MasterDataApi(BaseRestApi):
 
     def add_salary_category(self, body):
         """入金分類を追加する。"""
-        name = body.get("salary_category_name")
+        name = body.get("salaryCategoryName") or body.get("salary_category_name")
         if not name:
             return {"statusCode": 400, "error": "salary_category_name is required"}
         self.database.execute(
@@ -308,6 +308,6 @@ class MasterDataApi(BaseRestApi):
         """入金分類を論理削除する。"""
         rows = self.database.update(
             "UPDATE salary_info_category SET DEL_FLAG = 1 WHERE DEL_FLAG = 0 AND SAL_CAT = :SAL_CAT",
-            {"SAL_CAT": body.get("salary_category_name")},
+            {"SAL_CAT": body.get("salaryCategoryName") or body.get("salary_category_name")},
         )
         return json_response(200, rows)

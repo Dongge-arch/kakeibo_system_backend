@@ -42,6 +42,8 @@ class UserAuthApi(BaseRestApi):
             return self.logout(body)
         if action == "me":
             return self.me(body)
+        if action == "update_profile":
+            return self.update_profile(body)
         if action == "request_password_reset":
             return self.request_password_reset(body)
         if action == "reset_password":
@@ -116,7 +118,7 @@ class UserAuthApi(BaseRestApi):
 
         rows = self.database.select(
             """
-            SELECT USER_ID, USER_NAME, NICKNAME, USER_PASSWORD, PASSWORD_HASH, PASSWORD_SALT
+            SELECT USER_ID, USER_NAME, NICKNAME, AVATAR_IMAGE, USER_PASSWORD, PASSWORD_HASH, PASSWORD_SALT
             FROM user_info
             WHERE USER_NAME = :USER_NAME
               AND DEL_FLAG = 0
@@ -132,6 +134,7 @@ class UserAuthApi(BaseRestApi):
             self.row_value(row, "USER_ID"),
             self.row_value(row, "USER_NAME"),
             self.row_value(row, "NICKNAME"),
+            self.row_value(row, "AVATAR_IMAGE"),
         )
 
     def logout(self, _body):
@@ -141,10 +144,83 @@ class UserAuthApi(BaseRestApi):
         user = verify_token(body.get("token") or "")
         if not user:
             return json_response(200, None)
+        rows = self.database.select(
+            """
+            SELECT USER_ID, USER_NAME, NICKNAME, AVATAR_IMAGE
+            FROM user_info
+            WHERE USER_ID = :USER_ID
+              AND DEL_FLAG = 0
+            LIMIT 1
+            """,
+            {"USER_ID": user.get("userId")},
+        )
+        if rows:
+            row = rows[0]
+            return self.issue_session(
+                self.row_value(row, "USER_ID"),
+                self.row_value(row, "USER_NAME"),
+                self.row_value(row, "NICKNAME"),
+                self.row_value(row, "AVATAR_IMAGE"),
+            )
         return self.issue_session(
             user.get("userId"),
             user.get("email") or user.get("username"),
             user.get("nickname"),
+            user.get("avatarImage"),
+        )
+
+    def update_profile(self, body):
+        user = verify_token(body.get("token") or "")
+        user_id = body.get("userId") or user.get("userId")
+        if not user_id:
+            return json_response(401, {"errorMessage": "ログインが必要です。"})
+
+        nickname = self.clean(body.get("nickname"))
+        avatar_image = body.get("avatarImage")
+        if not nickname:
+            return json_response(400, {"errorMessage": "表示名を入力してください。"})
+        if avatar_image is not None and len(str(avatar_image)) > 700000:
+            return json_response(400, {"errorMessage": "アイコン画像が大きすぎます。"})
+
+        ymd, hms = now_ymd_hms()
+        self.database.update(
+            """
+            UPDATE user_info
+            SET UPD_PROG = :UPD_PROG,
+                NICKNAME = :NICKNAME,
+                AVATAR_IMAGE = :AVATAR_IMAGE,
+                UPD_DT = :UPD_DT,
+                UPD_TM = :UPD_TM
+            WHERE USER_ID = :USER_ID
+              AND DEL_FLAG = 0
+            """,
+            {
+                "UPD_PROG": "profile_update",
+                "NICKNAME": nickname,
+                "AVATAR_IMAGE": avatar_image or "",
+                "UPD_DT": ymd,
+                "UPD_TM": hms,
+                "USER_ID": user_id,
+            },
+        )
+        rows = self.database.select(
+            """
+            SELECT USER_ID, USER_NAME, NICKNAME, AVATAR_IMAGE
+            FROM user_info
+            WHERE USER_ID = :USER_ID
+              AND DEL_FLAG = 0
+            LIMIT 1
+            """,
+            {"USER_ID": user_id},
+        )
+        if not rows:
+            return json_response(404, {"errorMessage": "アカウントが見つかりません。"})
+        row = rows[0]
+        return self.issue_session(
+            self.row_value(row, "USER_ID"),
+            self.row_value(row, "USER_NAME"),
+            self.row_value(row, "NICKNAME"),
+            self.row_value(row, "AVATAR_IMAGE"),
         )
 
     def request_password_reset(self, body):
@@ -256,12 +332,13 @@ class UserAuthApi(BaseRestApi):
         )
         return json_response(200, {"ok": True, "message": "パスワードを更新しました。"})
 
-    def issue_session(self, user_id, username, nickname):
+    def issue_session(self, user_id, username, nickname, avatar_image=""):
         session = {
             "userId": user_id,
             "username": username,
             "email": username,
             "nickname": nickname or username,
+            "avatarImage": avatar_image or "",
         }
         session["token"] = issue_token(session)
         return json_response(200, session)
@@ -313,6 +390,7 @@ class UserAuthApi(BaseRestApi):
             "RESET_TOKEN_SALT": "RESET_TOKEN_SALT TEXT",
             "RESET_TOKEN_EXPIRES_AT": "RESET_TOKEN_EXPIRES_AT TEXT",
             "RESET_TOKEN_USED": "RESET_TOKEN_USED INTEGER DEFAULT 0",
+            "AVATAR_IMAGE": "AVATAR_IMAGE TEXT",
         }
         for ddl in columns.values():
             self.database.execute(f"ALTER TABLE user_info ADD COLUMN IF NOT EXISTS {ddl}")

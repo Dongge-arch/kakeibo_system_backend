@@ -83,8 +83,11 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=[
+        "accept",
         "authorization",
+        "cache-control",
         "content-type",
+        "pragma",
         "x-api-key",
         "x-kakeibo-user-id",
         "x-kakeibo-user-email",
@@ -342,6 +345,14 @@ def get_current_user(request: dict = Body(...)):
         request (dict): tokenを含むセッション確認要求。
     """
     return local_api(UserAuthApi, {"action": "me", **(request or {})})
+
+
+@app.post("/user/profile")
+def update_user_profile(request: dict = Body(...)):
+    """
+    ログイン中ユーザーの表示名とアイコン画像を更新する。
+    """
+    return local_api(UserAuthApi, {"action": "update_profile", **(request or {})})
 
 
 @app.get("/dashboard/layout")

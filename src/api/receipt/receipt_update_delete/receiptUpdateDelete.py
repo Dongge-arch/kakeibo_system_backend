@@ -171,7 +171,7 @@ class ReceiptUpdateDelete(BaseRestApi):
             UPD_DT = :UPD_DT,
             UPD_TM = :UPD_TM,
             SUP_NAME = COALESCE(:SUP_NAME, SUP_NAME),
-            IMG = CASE WHEN :IMG IS NULL OR :IMG = '' THEN IMG ELSE :IMG END,
+            IMG = COALESCE(NULLIF(CAST(:IMG AS TEXT), ''), IMG),
             TAX_FLAG = COALESCE(:TAX_FLAG, TAX_FLAG)
         WHERE INV_REG_NUM = :INV_REG_NUM
           AND DEL_FLAG = 0

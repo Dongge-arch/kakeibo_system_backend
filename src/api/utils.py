@@ -3,6 +3,7 @@
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
 import json
+import re
 from datetime import datetime
 
 
@@ -64,14 +65,65 @@ def json_response(status_code, body):
     return {"statusCode": status_code, "body": body}
 
 
+CAMEL_KEY_ALIASES = {
+    "CAT1": "category1",
+    "CAT2": "category2",
+    "CRE_DT": "createdDate",
+    "CRE_TM": "createdTime",
+    "CRE_USER_ID": "createdUserId",
+    "INV_REG_NUM": "invoiceRegistrationNumber",
+    "RET_DT": "receiptDate",
+    "RET_DET_CNT": "receiptDetailCount",
+    "RET_ID": "receiptId",
+    "RET_TM": "receiptTime",
+    "SAL_CAT": "salaryCategoryName",
+    "SUP_NAME": "supplierName",
+    "TOA_PRICE": "totalPrice",
+    "TO_PRE": "totalPrice",
+    "UPD_DT": "updatedDate",
+    "UPD_TM": "updatedTime",
+    "UPD_USER_ID": "updatedUserId",
+    "UT_PRE": "unitPrice",
+}
+
+
+def to_camel_key(key):
+    """DB列名やsnake_caseをAPI用camelCaseへ変換する。"""
+    if not isinstance(key, str):
+        return key
+    if key in CAMEL_KEY_ALIASES:
+        return CAMEL_KEY_ALIASES[key]
+    upper_key = key.upper()
+    if upper_key in CAMEL_KEY_ALIASES:
+        return CAMEL_KEY_ALIASES[upper_key]
+    if "_" not in key and not key.isupper():
+        return key[:1].lower() + key[1:]
+    parts = [part for part in re.split(r"[_\s]+", key.lower()) if part]
+    if not parts:
+        return key
+    return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
+
+
+def to_camel_payload(value):
+    """APIレスポンス本文を再帰的にcamelCaseキーへ寄せる。"""
+    if isinstance(value, list):
+        return [to_camel_payload(item) for item in value]
+    if isinstance(value, dict):
+        converted = {}
+        for key, item in value.items():
+            converted[to_camel_key(key)] = to_camel_payload(item)
+        return converted
+    return value
+
+
 def normalize_api_body(body):
-    """BaseRestApi の body がJSON文字列の場合はPythonオブジェクトへ戻す。"""
+    """BaseRestApi の body がJSON文字列の場合はPythonオブジェクトへ戻し、キーをcamelCaseへ寄せる。"""
     if isinstance(body, str):
         try:
-            return json.loads(body)
+            return to_camel_payload(json.loads(body))
         except Exception:
             return {}
-    return body
+    return to_camel_payload(body)
 
 
 def call_api(api, body, default_status_code=200):

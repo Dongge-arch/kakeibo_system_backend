@@ -48,8 +48,11 @@ Globals:
       AllowOrigins:
         - !Ref FrontendCorsOrigin
       AllowHeaders:
+        - accept
         - authorization
+        - cache-control
         - content-type
+        - pragma
         - x-api-key
         - x-kakeibo-user-id
         - x-kakeibo-user-email
