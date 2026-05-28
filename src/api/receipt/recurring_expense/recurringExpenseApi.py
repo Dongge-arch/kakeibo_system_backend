@@ -3,6 +3,7 @@
 
 from calendar import monthrange
 from datetime import datetime
+import json
 
 from src.api.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
 from src.api.utils import json_response, now_ymd_hms
@@ -185,6 +186,8 @@ class RecurringExpenseApi(BaseRestApi):
             if receipt_date.date() > today.date():
                 continue
             receipt_id = self.create_receipt_from_rule(row, receipt_date)
+            if not receipt_id:
+                raise ValueError("定期出費の出費明細登録に失敗しました。")
             rule_id = self.row_value(row, "id", "ID")
             self.mark_run(rule_id, current_month)
             created.append({"id": rule_id, "receiptId": receipt_id})
@@ -214,11 +217,12 @@ class RecurringExpenseApi(BaseRestApi):
             }],
         }
         api = NewReceiptRegistration()
-        result = api.main({"body": {"receiptInfo": receipt_info}})
+        result = api.call(body={"receiptInfo": receipt_info}, validate_b=False)
         body = result.get("body") or {}
         if isinstance(body, str):
-            import json
             body = json.loads(body)
+        if int(result.get("statusCode") or 500) >= 400:
+            raise ValueError(body.get("errorMessage") or "定期出費の出費明細登録に失敗しました。")
         return body.get("receiptId")
 
     def mark_run(self, rule_id, month):

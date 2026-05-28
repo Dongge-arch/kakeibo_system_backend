@@ -7,7 +7,7 @@
 - フロントエンドから呼ばれる REST API を提供します。
 - ユーザー登録、ログイン、パスワード再設定、レシート、入金、カテゴリ、予算、設定、AI 利用状況を処理します。
 - データは PostgreSQL に保存します。
-- Lambda の起動関数は薄く保ち、共通コードや API 実装は Layer に含めます。
+- Lambda の起動関数は薄く保ち、共通コード、API 実装、AI レシート解析クラスは Layer に含めます。
 
 ## フォルダ構成
 
@@ -46,6 +46,7 @@ AWS 認証情報はこのフォルダに直接置かず、AWS CLI の profile、
 - PostgreSQL 接続情報
 - CORS 許可オリジン
 - 認証・API key 関連設定
+- AI レシート解析用 Gemini 設定（`deploy/aws/application.lambda.yaml` の `ai_receipt`）
 
 `deploy_aws.env.bat` は秘密情報を含むため Git 管理対象外です。
 
@@ -61,6 +62,8 @@ cd C:\Users\董 昊哲\Desktop\home_kakeibo_lambda_backend
 ## Lambda と Layer の考え方
 
 この構成では、Lambda 起動関数にはリクエストを受けてアプリ本体へ渡す最小限のコードだけを置きます。API 実装、共通処理、DB 接続、業務ロジックは Layer 側に入れます。
+
+AI レシート解析も外部の AI 専用 API Gateway へ転送せず、Layer 内の `src/api/receipt/ai_receipt/receiptAnalyzer.py` にある `GeminiReceiptAnalyzer` を `AiReceiptApi` から直接呼び出します。
 
 更新時の基本方針は以下です。
 

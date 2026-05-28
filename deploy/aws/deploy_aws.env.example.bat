@@ -25,10 +25,6 @@ set "KAKEIBO_JWT_SECRET=replace-with-a-long-random-secret"
 set "KAKEIBO_API_KEY=replace-with-a-long-random-api-key"
 set "FRONTEND_CORS_ORIGIN=https://your-cloudfront-domain.example.com"
 
-REM Optional AI receipt integration.
-set "AI_RECEIPT_API_URL="
-set "AI_RECEIPT_API_KEY="
-
 REM Optional frontend deployment.
 REM If FRONTEND_S3_URI is set, deploy_aws.bat builds frontend-react/dist
 REM with the deployed API URL and syncs it to S3.

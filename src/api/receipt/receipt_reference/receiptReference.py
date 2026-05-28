@@ -165,11 +165,8 @@ class ReceiptReference(BaseRestApi):
                 re.RET_TM,
                 re.TAX_FLAG,
                 re.TOA_PRICE,
-                inv.IMG
+                CAST(NULL AS TEXT) AS IMG
             FROM receipt_info re
-            LEFT JOIN invoice_registration inv
-            ON re.INV_REG_NUM = inv.INV_REG_NUM
-            AND inv.DEL_FLAG = 0
             WHERE re.DEL_FLAG = 0
                 """
         
@@ -186,7 +183,33 @@ class ReceiptReference(BaseRestApi):
         sql = sql +"ORDER BY RET_ID DESC LIMIT 5000 ;"
 
         result = self.database.select(sql=sql, params=params)
+        self.attach_supplier_images(result)
         return result if result else []
+
+    def attach_supplier_images(self, rows: list[Dict[str, Any]]) -> None:
+        """検索済みレシートへ店舗ロゴを後付けする。A番号の自動支出は除外しない。"""
+        invoice_numbers = sorted({
+            row.get("INV_REG_NUM")
+            for row in rows
+            if row.get("INV_REG_NUM") and not str(row.get("INV_REG_NUM")).upper().startswith("A")
+        })
+        if not invoice_numbers:
+            return
+
+        params = {f"inv_{idx}": value for idx, value in enumerate(invoice_numbers)}
+        placeholders = ",".join(f":inv_{idx}" for idx in range(len(invoice_numbers)))
+        image_rows = self.database.select(
+            f"""
+            SELECT INV_REG_NUM, IMG
+            FROM invoice_registration
+            WHERE DEL_FLAG = 0
+              AND INV_REG_NUM IN ({placeholders})
+            """,
+            params,
+        )
+        image_map = {row.get("INV_REG_NUM"): row.get("IMG") for row in image_rows}
+        for row in rows:
+            row["IMG"] = image_map.get(row.get("INV_REG_NUM")) or ""
 
     def select_receipt_details(self, receipt_id_list: list, detail_price_sql: str, category_sql: str, params) -> list[Dict[str, Any]]:
         """対象レシートIDに紐づく明細情報を検索条件付きで取得する。"""

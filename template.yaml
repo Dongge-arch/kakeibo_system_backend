@@ -8,7 +8,7 @@ Description: Home Kakeibo API on AWS Lambda
 Parameters:
   HomeKakeiboLayerArn:
     Type: String
-    Description: ARN of the uploaded Home Kakeibo dependency layer.
+    Description: ARN of the uploaded Home Kakeibo dependency and application layer.
   KakeiboDatabaseUrl:
     Type: String
     NoEcho: true
@@ -32,15 +32,6 @@ Parameters:
     Type: String
     Default: "*"
     Description: Allowed frontend origin for API Gateway CORS, for example https://example.cloudfront.net.
-  AiReceiptApiUrl:
-    Type: String
-    Default: ""
-    Description: External AI receipt analysis API URL.
-  AiReceiptApiKey:
-    Type: String
-    NoEcho: true
-    Default: ""
-    Description: External AI receipt analysis API key.
 
 Globals:
   HttpApi:
@@ -79,8 +70,6 @@ Globals:
         KAKEIBO_JWT_SECRET: !Ref KakeiboJwtSecret
         KAKEIBO_API_KEY: !Ref KakeiboApiKey
         FRONTEND_CORS_ORIGIN: !Ref FrontendCorsOrigin
-        AI_RECEIPT_API_URL: !Ref AiReceiptApiUrl
-        AI_RECEIPT_API_KEY: !Ref AiReceiptApiKey
     Layers:
       - !Ref HomeKakeiboLayerArn
 
@@ -98,17 +87,7 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
-  HomeKakeiboReceiptAiFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: home-kakeibo-receipt-ai-function
-      Handler: lambda.receipt_ai_handler.handler
-      CodeUri: dist_lambda/function
-
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
-  ReceiptAiFunctionName:
-    Description: Direct invoke Lambda function name for receipt AI analysis
-    Value: !Ref HomeKakeiboReceiptAiFunction

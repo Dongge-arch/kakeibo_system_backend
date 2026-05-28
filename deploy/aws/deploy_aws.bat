@@ -107,13 +107,6 @@ if not defined FRONTEND_CORS_ORIGIN (
     echo [WARN] FRONTEND_CORS_ORIGIN is *. Set your CloudFront origin for production.
 )
 
-if not defined AI_RECEIPT_API_URL (
-    set /p "AI_RECEIPT_API_URL=AI receipt API URL, optional: "
-)
-if not defined AI_RECEIPT_API_KEY (
-    set /p "AI_RECEIPT_API_KEY=AI receipt API key, optional: "
-)
-
 echo.
 echo [INFO] Root:   %ROOT_DIR%
 if defined AWS_PROFILE echo [INFO] Profile: %AWS_PROFILE%
@@ -168,15 +161,13 @@ copy /Y "%ROOT_DIR%lambda\__init__.py" "%FUNCTION_DIR%\lambda\__init__.py" >nul
 if errorlevel 1 exit /b 1
 copy /Y "%ROOT_DIR%lambda\api_handler.py" "%FUNCTION_DIR%\lambda\api_handler.py" >nul
 if errorlevel 1 exit /b 1
-copy /Y "%ROOT_DIR%lambda\receipt_ai_handler.py" "%FUNCTION_DIR%\lambda\receipt_ai_handler.py" >nul
-if errorlevel 1 exit /b 1
 
 echo [7/9] Creating Lambda handler zip...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -Path '%FUNCTION_DIR%\*' -DestinationPath '%FUNCTION_ZIP%' -Force"
 if errorlevel 1 exit /b 1
 
 echo [8/9] Deploying SAM stack...
-sam deploy --template-file "%ROOT_DIR%template.yaml" --stack-name "%STACK_NAME%" --region "%AWS_REGION%" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides HomeKakeiboLayerArn="%HOME_KAKEIBO_LAYER_ARN%" KakeiboDatabaseUrl="%KAKEIBO_DATABASE_URL%" KakeiboDatabaseInitialize="%KAKEIBO_DATABASE_INITIALIZE%" KakeiboJwtSecret="%KAKEIBO_JWT_SECRET%" KakeiboApiKey="%KAKEIBO_API_KEY%" FrontendCorsOrigin="%FRONTEND_CORS_ORIGIN%" AiReceiptApiUrl="%AI_RECEIPT_API_URL%" AiReceiptApiKey="%AI_RECEIPT_API_KEY%"
+sam deploy --template-file "%ROOT_DIR%template.yaml" --stack-name "%STACK_NAME%" --region "%AWS_REGION%" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides HomeKakeiboLayerArn="%HOME_KAKEIBO_LAYER_ARN%" KakeiboDatabaseUrl="%KAKEIBO_DATABASE_URL%" KakeiboDatabaseInitialize="%KAKEIBO_DATABASE_INITIALIZE%" KakeiboJwtSecret="%KAKEIBO_JWT_SECRET%" KakeiboApiKey="%KAKEIBO_API_KEY%" FrontendCorsOrigin="%FRONTEND_CORS_ORIGIN%"
 if errorlevel 1 exit /b 1
 
 echo.

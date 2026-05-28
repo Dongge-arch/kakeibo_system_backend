@@ -3,10 +3,9 @@
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
 import json
-import urllib.error
-import urllib.request
 import uuid
 
+from src.api.receipt.ai_receipt.receiptAnalyzer import GeminiReceiptAnalyzer
 from src.api.utils import int_token, json_response, service_body, now_ymd_hms
 from src.common.base import BaseRestApi
 
@@ -14,10 +13,25 @@ from src.common.base import BaseRestApi
 class AiReceiptApi(BaseRestApi):
     """AIレシート解析、解析履歴、AI利用量を扱うAPIクラス。"""
 
-    def __init__(self, db_path=None, service_url="", api_key=""):
+    def __init__(
+        self,
+        db_path=None,
+        service_url="",
+        api_key="",
+        gemini_api_key="",
+        gemini_model="",
+        analyzer=None,
+    ):
         super().__init__(class_name=self.__class__.__name__, db_path=db_path)
         self.service_url = service_url
         self.api_key = api_key
+        self.gemini_api_key = gemini_api_key
+        self.gemini_model = gemini_model
+        self.analyzer = analyzer or GeminiReceiptAnalyzer(
+            api_key=gemini_api_key,
+            model=gemini_model,
+            timeout=40,
+        )
 
     def validate_body(self, request_dict):
         return super().validate_body(request_dict)
@@ -39,37 +53,24 @@ class AiReceiptApi(BaseRestApi):
         return json_response(400, {"errorMessage": "unknown ai receipt action"})
 
     def analyze(self, body):
-        """画像とカテゴリ情報を外部AI解析サービスへ送り、結果を履歴へ保存する。"""
-        if not self.service_url:
-            return json_response(500, {
-                "errorMessage": "AIレシート解析サービスのURLが未設定です。application.yaml を確認してください。"
-            })
-
+        """画像とカテゴリ情報をAI解析クラスへ渡し、結果を履歴へ保存する。"""
         image_base64 = body.get("imageBase64") or ""
         if "," in image_base64 and image_base64.startswith("data:"):
             image_base64 = image_base64.split(",", 1)[1]
-        if not image_base64:
-            return json_response(400, {"errorMessage": "画像データがありません。"})
+        receipt_text = (body.get("receiptText") or body.get("text") or "").strip()
+        if not image_base64 and not receipt_text:
+            return json_response(400, {"errorMessage": "画像またはレシート本文を入力してください。"})
 
         payload = {
             "imageBase64": image_base64,
             "imageMimeType": body.get("imageMimeType") or "image/jpeg",
+            "receiptText": receipt_text,
+            "inputType": "text" if receipt_text and not image_base64 else "image",
             "categories": self.merge_categories(body.get("categories")),
         }
 
         try:
-            request = urllib.request.Request(
-                self.service_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": self.api_key or "",
-                },
-                method="POST",
-            )
-            with urllib.request.urlopen(request, timeout=60) as response:
-                parsed = json.loads(response.read().decode("utf-8") or "{}")
-
+            parsed = self.analyzer.analyze_payload(payload)
             status_code = parsed.get("statusCode", 200) if isinstance(parsed, dict) else 200
             self.record_usage(parsed, status_code)
             response_body = service_body(parsed)
@@ -83,11 +84,6 @@ class AiReceiptApi(BaseRestApi):
                 response_body["usageSummary"] = self.usage_summary()
             return json_response(status_code, response_body)
 
-        except urllib.error.HTTPError as e:
-            return json_response(e.code, {
-                "errorMessage": "AIレシート解析サービスの呼び出しに失敗しました。",
-                "detail": e.read().decode("utf-8", errors="replace"),
-            })
         except Exception as e:
             return json_response(500, {"errorMessage": str(e)})
 

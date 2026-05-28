@@ -30,6 +30,8 @@ deploy\aws\deploy_aws.bat
 5. 関数 zip には `lambda/*.py` の handler だけを入れます。
 6. `sam deploy` で API Gateway と固定名 Lambda 関数を更新します。
 
+AI レシート解析は外部 AI 用 API Gateway を呼び出さず、Layer に含まれる `GeminiReceiptAnalyzer` を API 関数から直接呼び出します。Gemini 設定は Layer にコピーされる `deploy/aws/application.lambda.yaml` の `ai_receipt` に設定します。
+
 ## S3 / CloudFront
 
 この分割版で EXE を使う場合、通常 `FRONTEND_S3_URI` と `FRONTEND_CLOUDFRONT_DISTRIBUTION_ID` は空で構いません。

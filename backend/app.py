@@ -57,10 +57,8 @@ app = FastAPI()
 receipt_export = ReceiptExportService()
 
 AI_RECEIPT_CONFIG = APP_CONFIG.get("ai_receipt", {})
-# AIレシートサービスURL。環境変数があれば設定ファイルより優先する。
-AI_RECEIPT_API_URL = os.environ.get("AI_RECEIPT_API_URL") or AI_RECEIPT_CONFIG.get("url", "")
-# AIレシートサービスの認証キー。
-AI_RECEIPT_API_KEY = os.environ.get("AI_RECEIPT_API_KEY") or AI_RECEIPT_CONFIG.get("api_key", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or AI_RECEIPT_CONFIG.get("gemini_api_key", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL") or AI_RECEIPT_CONFIG.get("gemini_model", "gemini-2.5-flash-lite")
 API_GATEWAY_CONFIG = APP_CONFIG.get("api_gateway", {})
 APP_API_KEY = os.environ.get("KAKEIBO_API_KEY") or API_GATEWAY_CONFIG.get("api_key", "")
 # Lambdaでは静的配信を止めるためのスイッチ。
@@ -484,8 +482,8 @@ def analyze_receipt_with_ai(request: dict = Body(...)):
     return local_api(
         AiReceiptApi,
         {"action": "analyze", **(request or {})},
-        service_url=AI_RECEIPT_API_URL,
-        api_key=AI_RECEIPT_API_KEY,
+        gemini_api_key=GEMINI_API_KEY,
+        gemini_model=GEMINI_MODEL,
     )
 
 
@@ -497,8 +495,8 @@ def get_ai_receipt_usage():
     return local_api(
         AiReceiptApi,
         {"action": "usage"},
-        service_url=AI_RECEIPT_API_URL,
-        api_key=AI_RECEIPT_API_KEY,
+        gemini_api_key=GEMINI_API_KEY,
+        gemini_model=GEMINI_MODEL,
     )
 
 
@@ -510,8 +508,8 @@ def get_ai_receipt_history():
     return local_api(
         AiReceiptApi,
         {"action": "list_history"},
-        service_url=AI_RECEIPT_API_URL,
-        api_key=AI_RECEIPT_API_KEY,
+        gemini_api_key=GEMINI_API_KEY,
+        gemini_model=GEMINI_MODEL,
     )
 
 
@@ -526,8 +524,8 @@ def get_ai_receipt_history_detail(analysis_id: str):
     return local_api(
         AiReceiptApi,
         {"action": "get_history", "analysisId": analysis_id},
-        service_url=AI_RECEIPT_API_URL,
-        api_key=AI_RECEIPT_API_KEY,
+        gemini_api_key=GEMINI_API_KEY,
+        gemini_model=GEMINI_MODEL,
     )
 
 
@@ -542,8 +540,8 @@ def save_ai_receipt_final(request: dict = Body(...)):
     return local_api(
         AiReceiptApi,
         {"action": "save_final_receipt", **(request or {})},
-        service_url=AI_RECEIPT_API_URL,
-        api_key=AI_RECEIPT_API_KEY,
+        gemini_api_key=GEMINI_API_KEY,
+        gemini_model=GEMINI_MODEL,
     )
 
 
