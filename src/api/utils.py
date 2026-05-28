@@ -80,10 +80,14 @@ CAMEL_KEY_ALIASES = {
     "SUP_NAME": "supplierName",
     "TOA_PRICE": "totalPrice",
     "TO_PRE": "totalPrice",
+    "TO_TAX_EXCLUDED": "taxExcludedTotalPrice",
+    "TO_TAX_INCLUDED": "taxIncludedTotalPrice",
     "UPD_DT": "updatedDate",
     "UPD_TM": "updatedTime",
     "UPD_USER_ID": "updatedUserId",
     "UT_PRE": "unitPrice",
+    "UT_TAX_EXCLUDED": "taxExcludedUnitPrice",
+    "UT_TAX_INCLUDED": "taxIncludedUnitPrice",
 }
 
 

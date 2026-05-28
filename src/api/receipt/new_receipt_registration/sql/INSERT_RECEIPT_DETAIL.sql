@@ -10,7 +10,11 @@ INSERT INTO receipt_detail (
     QTY,
     UT,
     UT_PRE,
-    TO_PRE
+    TO_PRE,
+    UT_TAX_EXCLUDED,
+    TO_TAX_EXCLUDED,
+    UT_TAX_INCLUDED,
+    TO_TAX_INCLUDED
 ) VALUES (
     :RET_ID,
     :ITEM_NAME,
@@ -20,5 +24,9 @@ INSERT INTO receipt_detail (
     :QTY,
     :UT,
     :UT_PRE,
-    :TO_PRE
+    :TO_PRE,
+    :UT_TAX_EXCLUDED,
+    :TO_TAX_EXCLUDED,
+    :UT_TAX_INCLUDED,
+    :TO_TAX_INCLUDED
 );

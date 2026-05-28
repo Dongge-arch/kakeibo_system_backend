@@ -9,6 +9,8 @@ from src.common.base import BaseRestApi
 from src.common.functions.response import response
 from src.common.exception import Error
 from datetime import datetime
+from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
+from src.api.receipt.taxPrice import enrich_detail_prices
 
 
 class ReceiptUpdateDelete(BaseRestApi):
@@ -17,6 +19,7 @@ class ReceiptUpdateDelete(BaseRestApi):
     def __init__(self ,db_path: Optional[str] = None):
         super().__init__(class_name=self.__class__.__name__,db_path = db_path or None)
         self._validate_body_functions = {}
+        self.logo_storage = SupplierLogoStorage()
 
     def validate_headers(self, request_dict):
 
@@ -97,8 +100,10 @@ class ReceiptUpdateDelete(BaseRestApi):
             list[Dict[str, Any]]: 領収書の詳細情報
         """
 
+        self.ensure_receipt_detail_tax_columns()
         sql = f"""
-        SELECT RET_ID, ITEM_NAME, CAT1, CAT2, TAX_RATE, QTY, UT, UT_PRE, TO_PRE
+        SELECT RET_ID, ITEM_NAME, CAT1, CAT2, TAX_RATE, QTY, UT, UT_PRE, TO_PRE,
+               UT_TAX_EXCLUDED, TO_TAX_EXCLUDED, UT_TAX_INCLUDED, TO_TAX_INCLUDED
         FROM receipt_detail
         WHERE RET_ID = :receipt_id
         AND DEL_FLAG = 0
@@ -149,13 +154,14 @@ class ReceiptUpdateDelete(BaseRestApi):
         if not invoice_number or str(invoice_number).upper().startswith("A"):
             return
 
+        self.logo_storage.upload(invoice_number, receipt_info.get("supplierImage"))
         now_dt = datetime.now()
         params = {
             "CRE_PROG": "ReceiptUpdateDelete",
             "UPD_PROG": "ReceiptUpdateDelete",
             "INV_REG_NUM": invoice_number,
             "SUP_NAME": receipt_info.get("supplierName"),
-            "IMG": receipt_info.get("supplierImage"),
+            "IMG": "",
             "TAX_FLAG": receipt_info.get("taxFlag"),
             "CRE_DT": now_dt.strftime("%Y%m%d"),
             "CRE_TM": now_dt.strftime("%H%M%S"),
@@ -171,7 +177,7 @@ class ReceiptUpdateDelete(BaseRestApi):
             UPD_DT = :UPD_DT,
             UPD_TM = :UPD_TM,
             SUP_NAME = COALESCE(:SUP_NAME, SUP_NAME),
-            IMG = COALESCE(NULLIF(CAST(:IMG AS TEXT), ''), IMG),
+            IMG = '',
             TAX_FLAG = COALESCE(:TAX_FLAG, TAX_FLAG)
         WHERE INV_REG_NUM = :INV_REG_NUM
           AND DEL_FLAG = 0
@@ -226,9 +232,13 @@ class ReceiptUpdateDelete(BaseRestApi):
         }
         self.database.update(sql, params=params)
 
-        receipt_details = body.get("receiptInfo").get("receiptDetails")
+        receipt_info = body.get("receiptInfo") or {}
+        receipt_details = receipt_info.get("receiptDetails") or []
+        tax_flag = receipt_info.get("taxFlag")
+        self.ensure_receipt_detail_tax_columns()
 
         for detail in receipt_details:
+            prices = enrich_detail_prices(detail, tax_flag)
             receipt_detail_data = {
                 "UPD_PROG":"ReceiptUpdateDelete",
                 "UPD_DT":datetime.now().strftime("%Y%m%d"),
@@ -243,13 +253,26 @@ class ReceiptUpdateDelete(BaseRestApi):
                 "TAX_RATE": detail.get("taxRate",None),
                 "QTY": detail.get("quantity"),
                 "UT": detail.get("unit",None),
-                "UT_PRE": detail.get("unitPrice"),
-                "TO_PRE": detail.get("totalPrice"),
+                "UT_PRE": prices.get("unitPrice"),
+                "TO_PRE": prices.get("totalPrice"),
+                "UT_TAX_EXCLUDED": prices.get("taxExcludedUnitPrice"),
+                "TO_TAX_EXCLUDED": prices.get("taxExcludedTotalPrice"),
+                "UT_TAX_INCLUDED": prices.get("taxIncludedUnitPrice"),
+                "TO_TAX_INCLUDED": prices.get("taxIncludedTotalPrice"),
                 "DEL_FLAG":0
             }
             sql = self.database.read_sql("INSERT_RECEIPT_DETAIL",
                                          location=__file__)
             self.database.insert(sql, params=receipt_detail_data)
+
+    def ensure_receipt_detail_tax_columns(self) -> None:
+        for sql in (
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS UT_TAX_EXCLUDED DOUBLE PRECISION",
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS TO_TAX_EXCLUDED DOUBLE PRECISION",
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS UT_TAX_INCLUDED DOUBLE PRECISION",
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS TO_TAX_INCLUDED DOUBLE PRECISION",
+        ):
+            self.database.execute(sql)
 
     def delete_receipt_info_and_details(self, receipt_id: str) -> None:
         """

@@ -10,6 +10,7 @@ from src.common.base import BaseRestApi
 from src.common.functions.response import response
 from src.common.exception import Error
 from datetime import datetime
+from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
 
 
 class ReceiptReference(BaseRestApi):
@@ -18,6 +19,7 @@ class ReceiptReference(BaseRestApi):
     def __init__(self ,db_path: Optional[str] = None):
         super().__init__(class_name=self.__class__.__name__,db_path = db_path or None)
         self._validate_body_functions = {}
+        self.logo_storage = SupplierLogoStorage()
 
     def validate_headers(self, request_dict):
 
@@ -128,9 +130,14 @@ class ReceiptReference(BaseRestApi):
                         "itemName": d.get("ITEM_NAME"),
                         "category1": d.get("CAT1"),
                         "category2": d.get("CAT2"),
+                        "taxRate": d.get("TAX_RATE"),
                         "quantity": d.get("QTY"),
                         "unitPrice": d.get("UT_PRE"),
-                        "totalPrice": d.get("TO_PRE")
+                        "totalPrice": d.get("TO_PRE"),
+                        "taxExcludedUnitPrice": d.get("UT_TAX_EXCLUDED"),
+                        "taxExcludedTotalPrice": d.get("TO_TAX_EXCLUDED"),
+                        "taxIncludedUnitPrice": d.get("UT_TAX_INCLUDED"),
+                        "taxIncludedTotalPrice": d.get("TO_TAX_INCLUDED")
                     })
 
         return response(status_code=200,
@@ -187,29 +194,13 @@ class ReceiptReference(BaseRestApi):
         return result if result else []
 
     def attach_supplier_images(self, rows: list[Dict[str, Any]]) -> None:
-        """検索済みレシートへ店舗ロゴを後付けする。A番号の自動支出は除外しない。"""
-        invoice_numbers = sorted({
-            row.get("INV_REG_NUM")
-            for row in rows
-            if row.get("INV_REG_NUM") and not str(row.get("INV_REG_NUM")).upper().startswith("A")
-        })
-        if not invoice_numbers:
-            return
-
-        params = {f"inv_{idx}": value for idx, value in enumerate(invoice_numbers)}
-        placeholders = ",".join(f":inv_{idx}" for idx in range(len(invoice_numbers)))
-        image_rows = self.database.select(
-            f"""
-            SELECT INV_REG_NUM, IMG
-            FROM invoice_registration
-            WHERE DEL_FLAG = 0
-              AND INV_REG_NUM IN ({placeholders})
-            """,
-            params,
-        )
-        image_map = {row.get("INV_REG_NUM"): row.get("IMG") for row in image_rows}
+        """検索済みレシートへS3上の店舗ロゴURLを後付けする。"""
+        logo_cache = {}
         for row in rows:
-            row["IMG"] = image_map.get(row.get("INV_REG_NUM")) or ""
+            invoice_number = row.get("INV_REG_NUM")
+            if invoice_number not in logo_cache:
+                logo_cache[invoice_number] = self.logo_storage.url_for(invoice_number)
+            row["IMG"] = logo_cache[invoice_number]
 
     def select_receipt_details(self, receipt_id_list: list, detail_price_sql: str, category_sql: str, params) -> list[Dict[str, Any]]:
         """対象レシートIDに紐づく明細情報を検索条件付きで取得する。"""

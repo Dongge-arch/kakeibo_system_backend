@@ -22,6 +22,13 @@ def row_value(row, *keys, default=None):
     return default
 
 
+def int_value(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 class AppSettingsApi(BaseRestApi):
     """アプリ設定とダッシュボード配置を保存・取得するAPIクラス。"""
 
@@ -67,12 +74,9 @@ class AppSettingsApi(BaseRestApi):
             LIMIT 1
             """
         )
-        if not rows:
-            return None
-
-        row = rows[0]
+        row = rows[0] if rows else {}
         extra = parse_json_object(row_value(row, "BUT_CAT", "but_cat"))
-        return {
+        settings = {
             "budgetEnabled": str(row_value(row, "budgetEnabled", "BUT_ON_OFF", default="0")) in ("1", "true", "True", "on"),
             "budgetPeriod": row_value(row, "budgetPeriod", "BUDGET_PERIOD", default="month") or "month",
             "darkMode": str(row_value(row, "darkMode", "DAY_DARK", default="0")) in ("1", "true", "True", "on"),
@@ -82,6 +86,81 @@ class AppSettingsApi(BaseRestApi):
             "largeTextMode": bool(extra.get("largeTextMode", False)),
             "colorTheme": extra.get("colorTheme", "kakeibo"),
             "language": extra.get("language", "ja"),
+        }
+        settings["aiUsageSummary"] = self.get_ai_usage_summary()
+        return settings
+
+    def get_ai_usage_summary(self):
+        """設定画面向けにAI利用量の合計を返す。"""
+        try:
+            ymd, _ = now_ymd_hms()
+            month_prefix = ymd[:6]
+            rows = self.database.select(
+                """
+                SELECT
+                  COUNT(*) AS requestCount,
+                  COALESCE(SUM(PROMPT_TOKENS), 0) AS promptTokens,
+                  COALESCE(SUM(OUTPUT_TOKENS), 0) AS outputTokens,
+                  COALESCE(SUM(TOTAL_TOKENS), 0) AS totalTokens,
+                  COALESCE(SUM(CACHED_TOKENS), 0) AS cachedTokens,
+                  COALESCE(SUM(THOUGHTS_TOKENS), 0) AS thoughtsTokens
+                FROM ai_usage_log
+                WHERE DEL_FLAG = 0
+                  AND FEATURE = 'receipt_ai'
+                """
+            )
+            today_rows = self.database.select(
+                """
+                SELECT
+                  COUNT(*) AS requestCount,
+                  COALESCE(SUM(PROMPT_TOKENS), 0) AS promptTokens,
+                  COALESCE(SUM(OUTPUT_TOKENS), 0) AS outputTokens,
+                  COALESCE(SUM(TOTAL_TOKENS), 0) AS totalTokens,
+                  COALESCE(SUM(CACHED_TOKENS), 0) AS cachedTokens,
+                  COALESCE(SUM(THOUGHTS_TOKENS), 0) AS thoughtsTokens
+                FROM ai_usage_log
+                WHERE DEL_FLAG = 0
+                  AND FEATURE = 'receipt_ai'
+                  AND CRE_DT = :CRE_DT
+                """,
+                {"CRE_DT": ymd},
+            )
+            month_rows = self.database.select(
+                """
+                SELECT
+                  COUNT(*) AS requestCount,
+                  COALESCE(SUM(PROMPT_TOKENS), 0) AS promptTokens,
+                  COALESCE(SUM(OUTPUT_TOKENS), 0) AS outputTokens,
+                  COALESCE(SUM(TOTAL_TOKENS), 0) AS totalTokens,
+                  COALESCE(SUM(CACHED_TOKENS), 0) AS cachedTokens,
+                  COALESCE(SUM(THOUGHTS_TOKENS), 0) AS thoughtsTokens
+                FROM ai_usage_log
+                WHERE DEL_FLAG = 0
+                  AND FEATURE = 'receipt_ai'
+                  AND CRE_DT LIKE :CRE_MONTH
+                """,
+                {"CRE_MONTH": f"{month_prefix}%"},
+            )
+            return {
+                "total": self.format_usage_row(rows[0] if rows else {}),
+                "today": self.format_usage_row(today_rows[0] if today_rows else {}),
+                "month": self.format_usage_row(month_rows[0] if month_rows else {}),
+            }
+        except Exception:
+            return {
+                "total": self.format_usage_row({}),
+                "today": self.format_usage_row({}),
+                "month": self.format_usage_row({}),
+            }
+
+    def format_usage_row(self, row):
+        return {
+            "requestCount": int_value(row_value(row, "requestCount", "requestcount", default=0)),
+            "promptTokens": int_value(row_value(row, "promptTokens", "prompttokens", default=0)),
+            "outputTokens": int_value(row_value(row, "outputTokens", "outputtokens", default=0)),
+            "totalTokens": int_value(row_value(row, "totalTokens", "totaltokens", default=0)),
+            "cachedTokens": int_value(row_value(row, "cachedTokens", "cachedtokens", default=0)),
+            "thoughtsTokens": int_value(row_value(row, "thoughtsTokens", "thoughtstokens", default=0)),
         }
 
     def save_settings(self, body):

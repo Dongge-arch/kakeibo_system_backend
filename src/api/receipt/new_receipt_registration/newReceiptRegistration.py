@@ -11,6 +11,8 @@ from src.common.functions.response import response
 from src.common.exception import Error
 from src.common.auth_context import get_current_user_id
 from datetime import datetime
+from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
+from src.api.receipt.taxPrice import enrich_detail_prices
 
 
 class NewReceiptRegistration(BaseRestApi):
@@ -25,6 +27,7 @@ class NewReceiptRegistration(BaseRestApi):
         """
         super().__init__(class_name=self.__class__.__name__,db_path = db_path or None)
         self._validate_body_functions = {}
+        self.logo_storage = SupplierLogoStorage()
 
     def validate_headers(self, request_dict):
         """
@@ -80,6 +83,7 @@ class NewReceiptRegistration(BaseRestApi):
         receipt_id = self.create_receipt_id(receipt_info=receipt_info)
         invoice_number = self.normalize_or_create_receipt_number(receipt_info.get("invoiceRegistrationNumber"))
         receipt_info["invoiceRegistrationNumber"] = invoice_number
+        self.logo_storage.upload(invoice_number, receipt_info.get("supplierImage"))
         select_response = self.select_invoice_registration(
             inv_reg_num=invoice_number)
         if not select_response:
@@ -88,7 +92,8 @@ class NewReceiptRegistration(BaseRestApi):
         self.insert_receipt_info(receipt_id=receipt_id,
                                  receipt_info=receipt_info)
         self.insert_receipt_details(receipt_id=receipt_id,
-                                    receipt_details=receipt_details)
+                                    receipt_details=receipt_details,
+                                    tax_flag=receipt_info.get("taxFlag"))
 
         api_response = {
             "message": "領収書の情報が正常に登録されました。",
@@ -145,7 +150,7 @@ class NewReceiptRegistration(BaseRestApi):
         sql = self.database.read_sql("INSERT_RECEIPT_INFO", location=__file__)
         self.database.insert(sql, params=receipt_info_data)
 
-    def insert_receipt_details(self, receipt_id: str, receipt_details: list):
+    def insert_receipt_details(self, receipt_id: str, receipt_details: list, tax_flag=None):
         """
             領収書の詳細情報をデータベースに挿入する。
 
@@ -153,7 +158,9 @@ class NewReceiptRegistration(BaseRestApi):
                 receipt_id(str): 領収書のID。
                 receipt_details(list): 領収書の詳細情報を含む辞書のリスト。
         """
+        self.ensure_receipt_detail_tax_columns()
         for detail in receipt_details:
+            prices = enrich_detail_prices(detail, tax_flag)
             receipt_detail_data = {
                 "CRE_PROG":"NewReceiptRegistration",
                 "UPD_PROG":"NewReceiptRegistration",
@@ -164,8 +171,12 @@ class NewReceiptRegistration(BaseRestApi):
                 "TAX_RATE": detail.get("taxRate"),
                 "QTY": detail.get("quantity"),
                 "UT": detail.get("unit"),
-                "UT_PRE": detail.get("unitPrice"),
-                "TO_PRE": detail.get("totalPrice"),
+                "UT_PRE": prices.get("unitPrice"),
+                "TO_PRE": prices.get("totalPrice"),
+                "UT_TAX_EXCLUDED": prices.get("taxExcludedUnitPrice"),
+                "TO_TAX_EXCLUDED": prices.get("taxExcludedTotalPrice"),
+                "UT_TAX_INCLUDED": prices.get("taxIncludedUnitPrice"),
+                "TO_TAX_INCLUDED": prices.get("taxIncludedTotalPrice"),
                 "CRE_DT":datetime.now().strftime("%Y%m%d"),
                 "CRE_TM":datetime.now().strftime("%H%M%S"),
                 "UPD_DT":datetime.now().strftime("%Y%m%d"),
@@ -174,6 +185,15 @@ class NewReceiptRegistration(BaseRestApi):
             sql = self.database.read_sql("INSERT_RECEIPT_DETAIL",
                                          location=__file__)
             self.database.insert(sql, params=receipt_detail_data)
+
+    def ensure_receipt_detail_tax_columns(self) -> None:
+        for sql in (
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS UT_TAX_EXCLUDED DOUBLE PRECISION",
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS TO_TAX_EXCLUDED DOUBLE PRECISION",
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS UT_TAX_INCLUDED DOUBLE PRECISION",
+            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS TO_TAX_INCLUDED DOUBLE PRECISION",
+        ):
+            self.database.execute(sql)
 
     def create_receipt_id(self, receipt_info: Dict[str, Any]) -> str:
         """
@@ -234,7 +254,7 @@ class NewReceiptRegistration(BaseRestApi):
             "UPD_PROG":"NewReceiptRegistration",
             "INV_REG_NUM": invoice_number,
             "SUP_NAME": body.get("supplierName"),
-            "IMG": body.get("supplierImage"),
+            "IMG": "",
             "TAX_FLAG": body.get("taxFlag"),
             "CRE_DT":datetime.now().strftime("%Y%m%d"),
             "CRE_TM":datetime.now().strftime("%H%M%S"),

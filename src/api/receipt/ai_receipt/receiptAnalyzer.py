@@ -10,6 +10,8 @@ import re
 
 import requests
 
+from src.api.receipt.taxPrice import enrich_detail_prices
+
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +166,21 @@ def category_pairs(categories: dict) -> set[tuple[str, str]]:
     return pairs
 
 
+def category_tax_rate_map(categories: dict) -> dict[tuple[str, str], float]:
+    """分類ペアごとの税率を後処理で参照できるようにする。"""
+    if not isinstance(categories, dict):
+        return {}
+
+    result = {}
+    for item in categories.get("category2") or []:
+        parent = get_category_name(item, "CATEGORY1_NAME")
+        child = get_category_name(item, "CATEGORY2_NAME")
+        if not parent or not child:
+            continue
+        result[(parent, child)] = item.get("TAX_RATE") if isinstance(item, dict) else None
+    return result
+
+
 def fallback_category(item_name: str, pairs: set[tuple[str, str]]) -> tuple[str, str]:
     """
     AI が未分類を返した場合の最低限の補正。
@@ -199,7 +216,9 @@ def build_receipt_prompt(categories: dict) -> str:
 画像が暗い、ブレている、文字が小さい、金額や商品名が読めないなど、登録に必要な内容を十分に識別できない場合は AI_RECEIPT_UNREADABLE だけを返してください。
 
 分類は必ず下の分類一覧から選んでください。自由入力は禁止です。
+receiptDetails の各明細は category1/category2/taxRate を必ず入れてください。空文字は禁止です。
 category1 には「■」の分類名、category2 にはその下の項目名を入れてください。
+迷う場合も「未分類」にせず、商品名から最も近い分類を選んでください。
 
 【分類一覧】
 {category_text}
@@ -219,7 +238,8 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 - unitPrice は値引き前の商品単価、totalPrice は unitPrice * quantity - discount の値を入れてください。
 - 例: 商品 980 円、50% 値引 -490 円の場合は unitPrice=980, discount=490, totalPrice=490。
 - レジ袋は商品明細として残し、日用品に分類してください。
-- 商品名を漢字に変換などの方法でわかりやすくしてください、
+- 商品名はレシート上の省略語、カナ、英数字を補完し、何を買ったか分かる自然な名前にしてください。
+- ブランド名、容量、味、種類、部位、個数などが読める場合は itemName に含めてください。読めない内容は推測しすぎないでください。
 - ポイント付与、ポイント利用、ポイント残高、会員番号、支払方法、預り金、おつり、税率別対象額、消費税額は receiptDetails に入れないでください。
 - 8%対象/10%対象の税額行そのものは receiptDetails に入れないでください。税率は分類の taxRate から後続システムが計算します。
 - 読み取った明細 totalPrice の合計に税を加えた金額が receiptInfo.totalPrice と大きく合わない場合、明細の読み落としや値引きの紐付けを見直してください。
@@ -238,6 +258,7 @@ category1 には「■」の分類名、category2 にはその下の項目名を
         "itemName": "",
         "category1": "",
         "category2": "",
+        "taxRate": 0.1,
         "quantity": 1,
         "unitPrice": 0,
         "discount": 0,
@@ -346,6 +367,8 @@ class GeminiReceiptAnalyzer:
         raw_items = receipt.get("receiptDetails") or receipt.get("items") or data.get("items") or []
         details = []
         valid_pairs = category_pairs(categories or {})
+        tax_rates = category_tax_rate_map(categories or {})
+        tax_flag = str(receipt.get("taxFlag") if receipt.get("taxFlag") is not None else "0")
 
         for item in raw_items if isinstance(raw_items, list) else []:
             if not isinstance(item, dict):
@@ -365,16 +388,29 @@ class GeminiReceiptAnalyzer:
             category2 = clean_category_label(item.get("category2") or item.get("category_2") or item.get("category_3") or "")
             if valid_pairs and (category1, category2) not in valid_pairs:
                 category1, category2 = fallback_category(item.get("itemName") or item.get("name"), valid_pairs)
+            if valid_pairs and (category1, category2) not in valid_pairs and tax_rates:
+                category1, category2 = next(iter(tax_rates.keys()))
 
-            details.append({
-                "itemName": str(item.get("itemName") or item.get("name") or "").strip(),
+            tax_rate = (
+                item.get("taxRate")
+                if item.get("taxRate") is not None
+                else item.get("tax_rate")
+                if item.get("tax_rate") is not None
+                else tax_rates.get((category1, category2), 0.1)
+            )
+
+            normalized_detail = {
+                "itemName": str(item.get("itemName") or item.get("name") or "不明商品").strip(),
                 "category1": category1,
                 "category2": category2,
+                "taxRate": tax_rate,
                 "quantity": quantity,
                 "unitPrice": unit_price,
                 "discount": to_int(item.get("discount")),
                 "totalPrice": total_price,
-            })
+            }
+            normalized_detail.update(enrich_detail_prices(normalized_detail, tax_flag))
+            details.append(normalized_detail)
 
         total_price = to_int(
             receipt.get("totalPrice")
@@ -400,7 +436,7 @@ class GeminiReceiptAnalyzer:
                 ).strip(),
                 "receiptDate": normalize_date(receipt.get("receiptDate") or receipt.get("date")),
                 "receiptTime": normalize_time(receipt.get("receiptTime") or receipt.get("time")),
-                "taxFlag": str(receipt.get("taxFlag") if receipt.get("taxFlag") is not None else "0"),
+                "taxFlag": tax_flag,
                 "totalPrice": total_price,
                 "receiptDetailCount": len(details),
                 "receiptDetails": details,

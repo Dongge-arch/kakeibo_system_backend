@@ -1,5 +1,6 @@
 dist_lambda/
 .aws-sam/
+deploy/aws/application.lambda.yaml
 deploy/aws/deploy_aws.env.bat
 deploy/aws/deploy_aws.env.ps1
 src/common/config/application.yaml
@@ -21,3 +22,4 @@ __pycache__/
 *secret*.json
 *credentials*.json
 aws-exports.js
+deploy/aws/application.lambda.yaml

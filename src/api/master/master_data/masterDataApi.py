@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
-import base64
-
 from src.api.utils import (
     json_response,
     normalize_invoice_number,
     normalize_tax_flag,
 )
+from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
 from src.common.base import BaseRestApi
 
 
@@ -17,6 +16,7 @@ class MasterDataApi(BaseRestApi):
 
     def __init__(self, db_path=None):
         super().__init__(class_name=self.__class__.__name__, db_path=db_path)
+        self.logo_storage = SupplierLogoStorage()
 
     def validate_body(self, request_dict):
         return super().validate_body(request_dict)
@@ -215,16 +215,15 @@ class MasterDataApi(BaseRestApi):
             })
         rows = self.database.select(
             """
-            SELECT SUP_NAME AS supplierName, IMG AS supplierLogo, TAX_FLAG AS taxFlag
+            SELECT INV_REG_NUM, SUP_NAME AS supplierName, TAX_FLAG AS taxFlag
             FROM invoice_registration
             WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
             """,
             {"INV_REG_NUM": invoice_no},
         )
         for row in rows:
-            image = row.get("supplierLogo")
-            if image and isinstance(image, (bytes, bytearray)):
-                row["supplierLogo"] = base64.b64encode(image).decode("utf-8")
+            row["supplierLogo"] = self.logo_storage.url_for(row.get("INV_REG_NUM"))
+            row.pop("INV_REG_NUM", None)
             if row.get("taxFlag") is None:
                 row["taxFlag"] = 1
         return json_response(200, rows)
@@ -250,25 +249,16 @@ class MasterDataApi(BaseRestApi):
             "TAX_FLAG": normalize_tax_flag(body.get("taxFlag")),
             "INV_REG_NUM": invoice_number,
         }
-        if body.get("supplierImage") is None:
-            self.database.execute(
-                """
-                UPDATE invoice_registration
-                SET SUP_NAME = :SUP_NAME, TAX_FLAG = :TAX_FLAG
-                WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
-                """,
-                params,
-            )
-        else:
-            params["IMG"] = body.get("supplierImage")
-            self.database.execute(
-                """
-                UPDATE invoice_registration
-                SET IMG = :IMG, SUP_NAME = :SUP_NAME, TAX_FLAG = :TAX_FLAG
-                WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
-                """,
-                params,
-            )
+        if body.get("supplierImage") is not None:
+            self.logo_storage.upload(invoice_number, body.get("supplierImage"))
+        self.database.execute(
+            """
+            UPDATE invoice_registration
+            SET IMG = '', SUP_NAME = :SUP_NAME, TAX_FLAG = :TAX_FLAG
+            WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
+            """,
+            params,
+        )
         rows = self.database.select(
             """
             SELECT INV_REG_NUM, IMG, SUP_NAME, TAX_FLAG
@@ -281,9 +271,11 @@ class MasterDataApi(BaseRestApi):
 
     def invoice_response(self, row):
         """DB行を画面で扱うインボイス項目名へ変換する。"""
+        supplier_logo = self.logo_storage.url_for(row.get("INV_REG_NUM"))
         return {
             "invoiceRegistrationNumber": row.get("INV_REG_NUM"),
-            "supplierImage": row.get("IMG"),
+            "supplierImage": supplier_logo,
+            "supplierLogo": supplier_logo,
             "supplierName": row.get("SUP_NAME"),
             "taxFlag": normalize_tax_flag(row.get("TAX_FLAG")),
         }

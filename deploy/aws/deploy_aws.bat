@@ -23,6 +23,7 @@ if not defined PYTHON_VERSION set "PYTHON_VERSION=3.12"
 if not defined ARCHITECTURE set "ARCHITECTURE=arm64"
 if not defined LAYER_PLATFORM set "LAYER_PLATFORM=manylinux2014_aarch64"
 if not defined KAKEIBO_DATABASE_INITIALIZE set "KAKEIBO_DATABASE_INITIALIZE=false"
+if not defined SUPPLIER_LOGO_S3_BUCKET set "SUPPLIER_LOGO_S3_BUCKET="
 if not defined FRONTEND_BUILD_DRIVE set "FRONTEND_BUILD_DRIVE=K:"
 
 if not defined KAKEIBO_PYTHON (
@@ -167,7 +168,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -Path '
 if errorlevel 1 exit /b 1
 
 echo [8/9] Deploying SAM stack...
-sam deploy --template-file "%ROOT_DIR%template.yaml" --stack-name "%STACK_NAME%" --region "%AWS_REGION%" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides HomeKakeiboLayerArn="%HOME_KAKEIBO_LAYER_ARN%" KakeiboDatabaseUrl="%KAKEIBO_DATABASE_URL%" KakeiboDatabaseInitialize="%KAKEIBO_DATABASE_INITIALIZE%" KakeiboJwtSecret="%KAKEIBO_JWT_SECRET%" KakeiboApiKey="%KAKEIBO_API_KEY%" FrontendCorsOrigin="%FRONTEND_CORS_ORIGIN%"
+sam deploy --template-file "%ROOT_DIR%template.yaml" --stack-name "%STACK_NAME%" --region "%AWS_REGION%" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides HomeKakeiboLayerArn="%HOME_KAKEIBO_LAYER_ARN%" KakeiboDatabaseUrl="%KAKEIBO_DATABASE_URL%" KakeiboDatabaseInitialize="%KAKEIBO_DATABASE_INITIALIZE%" KakeiboJwtSecret="%KAKEIBO_JWT_SECRET%" KakeiboApiKey="%KAKEIBO_API_KEY%" FrontendCorsOrigin="%FRONTEND_CORS_ORIGIN%" SupplierLogoBucketName="%SUPPLIER_LOGO_S3_BUCKET%"
 if errorlevel 1 exit /b 1
 
 echo.
