@@ -254,7 +254,6 @@ class NewReceiptRegistration(BaseRestApi):
             "UPD_PROG":"NewReceiptRegistration",
             "INV_REG_NUM": invoice_number,
             "SUP_NAME": body.get("supplierName"),
-            "IMG": "",
             "TAX_FLAG": body.get("taxFlag"),
             "CRE_DT":datetime.now().strftime("%Y%m%d"),
             "CRE_TM":datetime.now().strftime("%H%M%S"),

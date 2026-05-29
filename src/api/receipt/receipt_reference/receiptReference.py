@@ -4,7 +4,6 @@
 
 
 """レシート情報の検索API。"""
-import base64
 from typing import Dict, Any, Optional
 from src.common.base import BaseRestApi
 from src.common.functions.response import response
@@ -112,7 +111,7 @@ class ReceiptReference(BaseRestApi):
                 for d in details:
                     ret_dt = r.get("RET_DT")
                     ret_tm = r.get("RET_TM")
-                    supplier_image = self.encode_image(r.get("IMG"))
+                    supplier_image = r.get("SUPPLIER_LOGO") or ""
 
                     if ret_dt and len(ret_dt)==8:
                         r["RET_DT"] = datetime.strptime(r["RET_DT"] , "%Y%m%d").strftime("%Y-%m-%d")
@@ -143,12 +142,6 @@ class ReceiptReference(BaseRestApi):
         return response(status_code=200,
                         body={"receiptDetails": receipt_details})
 
-    def encode_image(self, value):
-        """DBの画像値をブラウザで扱える文字列へ揃える。"""
-        if isinstance(value, (bytes, bytearray)):
-            return base64.b64encode(value).decode("utf-8")
-        return value or ""
-
     def exception(self, e: Exception) -> dict:
         """
             例外処理を行う。
@@ -171,8 +164,7 @@ class ReceiptReference(BaseRestApi):
                 re.RET_DT,
                 re.RET_TM,
                 re.TAX_FLAG,
-                re.TOA_PRICE,
-                CAST(NULL AS TEXT) AS IMG
+                re.TOA_PRICE
             FROM receipt_info re
             WHERE re.DEL_FLAG = 0
                 """
@@ -200,7 +192,7 @@ class ReceiptReference(BaseRestApi):
             invoice_number = row.get("INV_REG_NUM")
             if invoice_number not in logo_cache:
                 logo_cache[invoice_number] = self.logo_storage.url_for(invoice_number)
-            row["IMG"] = logo_cache[invoice_number]
+            row["SUPPLIER_LOGO"] = logo_cache[invoice_number]
 
     def select_receipt_details(self, receipt_id_list: list, detail_price_sql: str, category_sql: str, params) -> list[Dict[str, Any]]:
         """対象レシートIDに紐づく明細情報を検索条件付きで取得する。"""

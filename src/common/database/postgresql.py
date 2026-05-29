@@ -5,12 +5,13 @@
 import os
 import re
 import threading
+from src.common.base import Base
 from typing import Any, Dict, List, Optional
 
 from src.common.auth_context import get_current_user_id
 
 
-class PostgresqlRow(dict):
+class PostgresqlRow(dict, Base):
     """PostgreSQLの小文字化された列名を既存API名でも参照できる行オブジェクト。"""
 
     _camel_aliases = {
@@ -57,6 +58,8 @@ class PostgresqlRow(dict):
     }
 
     def __init__(self, row: Dict[str, Any]):
+        Base.__init__(self, self.__class__.__name__)
+        dict.__init__(self)
         normalized = {}
         for key, value in dict(row).items():
             normalized[key] = value
@@ -66,7 +69,7 @@ class PostgresqlRow(dict):
                 alias = self._camel_aliases.get(key.lower())
                 if alias:
                     normalized.setdefault(alias, value)
-        super().__init__(normalized)
+        self.update(normalized)
 
     def _resolve_key(self, key):
         if not isinstance(key, str) or dict.__contains__(self, key):
@@ -98,7 +101,7 @@ class PostgresqlRow(dict):
         return default
 
 
-class Postgresql:
+class Postgresql(Base):
     """
     NeonなどのPostgreSQLへ接続するDBアダプタ。
     """
@@ -109,6 +112,7 @@ class Postgresql:
     _initialized_urls = set()
     # PostgreSQL advisory lock用の固定ID。
     _advisory_lock_id = 74060219849901
+    _connect_retry_count = 20
     _owned_tables = {
         # ログインユーザー別にCRE_USER_IDで絞り込む対象テーブル。
         "receipt_info",
@@ -147,6 +151,7 @@ class Postgresql:
             database_url(str): PostgreSQL接続URL。
             initialize_schema(bool): 起動時にCREATE TABLEを実行するかどうか。
         """
+        super().__init__(self.__class__.__name__)
         if not database_url:
             raise ValueError("PostgreSQL database url is required.")
 
@@ -155,8 +160,9 @@ class Postgresql:
 
         # SQLファイル読み込み結果のキャッシュ。
         self._sql_cache = {}
-        self.connector = connect(database_url, row_factory=dict_row)
-        print("DB TYPE: postgresql")
+        
+        self.connector = self.connect_with_retry(connect, database_url, dict_row)
+        self.logger.info("DB TYPE: postgresql")
 
         if initialize_schema:
             self.initialize_schema_once(database_url)
@@ -165,6 +171,19 @@ class Postgresql:
 
         # 既存SQLの :NAME 形式を psycopg の %(NAME)s 形式へ変換する。
         self._pattern = re.compile(r":([a-zA-Z_][a-zA-Z0-9_]*)")
+
+    def connect_with_retry(self, connect_func, database_url: str, dict_row):
+        """DB connection retry: 20 attempts, no wait between attempts."""
+        last_error = None
+        for attempt in range(1, self._connect_retry_count + 1):
+            try:
+                return connect_func(database_url, row_factory=dict_row)
+            except Exception as exc:
+                last_error = exc
+                if attempt >= self._connect_retry_count:
+                    break
+                self.logger.info(f"PostgreSQL connection failed ({attempt}/{self._connect_retry_count}); retrying.")
+        raise last_error
 
     def read_sql(self, sqlname: str, location=None):
         """
@@ -210,9 +229,8 @@ class Postgresql:
         """
         sql, params = self.apply_user_scope(sql, params or {}, "select")
         sql = self.convert_placeholders(sql)
-        cursor = self.connector.cursor()
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
+        result = self.do_sql_with_retry(sql, params)
+        rows = result.fetchall()
         return [PostgresqlRow(dict(row)) for row in rows]
 
     def execute(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
@@ -227,11 +245,11 @@ class Postgresql:
             int: 更新件数。
         """
         sql, params = self.apply_user_scope(sql, params or {}, "execute")
+        # 既存SQLの :NAME 形式を psycopg の %(NAME)s 形式へ変換する。
         sql = self.convert_placeholders(sql)
-        cursor = self.connector.cursor()
-        cursor.execute(sql, params)
-        self.connector.commit()
-        return cursor.rowcount
+        result = self.do_sql_with_retry(sql, params)
+        self.commit()
+        return self.extract_rowcount(result)
 
     def insert(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
         """
@@ -246,10 +264,10 @@ class Postgresql:
         """
         sql, params = self.apply_user_scope(sql, params or {}, "insert")
         sql = self.convert_placeholders(sql)
-        cursor = self.connector.cursor()
-        cursor.execute(sql, params)
-        self.connector.commit()
-        return cursor.rowcount
+        # PostgreSQLはINSERTの実行結果に更新件数を返すため、リトライはexecuteと同様に行う。
+        result = self.do_sql_with_retry(sql, params)
+        self.commit()
+        return self.extract_rowcount(result)
 
     def update(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
         """
@@ -262,20 +280,25 @@ class Postgresql:
         Returns:
             int: 更新件数。
         """
-        return self.execute(sql, params)
+        result = self.do_sql_with_retry(sql, params)
+        self.commit()
+        return self.extract_rowcount(result)
 
-    def execute_many(self, sql: str, params_list: List[Dict[str, Any]]) -> None:
+    def execute_many(self, sql: str, params_list: List[Dict[str, Any]]) -> int:
         """
         複数パラメータで同一SQLをまとめて実行する。
 
         Args:
             sql(str): 実行するSQL文。
             params_list(List[Dict[str, Any]]): SQLに渡すパラメータ一覧。
+
+        Returns:
+            int: 更新件数。
         """
         sql = self.convert_placeholders(sql)
-        cursor = self.connector.cursor()
-        cursor.executemany(sql, params_list)
-        self.connector.commit()
+        result = self.do_sql_with_retry(sql, params_list)
+        self.commit()
+        return self.extract_rowcount(result)
 
     def begin(self):
         """
@@ -288,12 +311,14 @@ class Postgresql:
         現在のトランザクションをコミットする。
         """
         self.connector.commit()
+        self.logger.info("コミット完了")
 
     def rollback(self):
         """
         現在のトランザクションをロールバックする。
         """
         self.connector.rollback()
+        self.logger.info("ロールバック完了")
 
     def convert_placeholders(self, sql: str) -> str:
         """
@@ -306,6 +331,20 @@ class Postgresql:
             str: psycopg形式のプレースホルダへ変換したSQL文。
         """
         return self._pattern.sub(lambda m: f"%({m.group(1)})s", sql)
+
+    def extract_rowcount(self, result: Any) -> int:
+        """
+        psycopgカーソルや辞書形式の実行結果から更新件数を取り出す。
+
+        Args:
+            result(Any): SQL実行結果。
+
+        Returns:
+            int: 更新件数。取得できない場合は0。
+        """
+        if isinstance(result, dict):
+            return int(result.get("rowcount") or 0)
+        return int(getattr(result, "rowcount", 0) or 0)
 
     def apply_user_scope(self, sql: str, params: Dict[str, Any], operation: str):
         """
@@ -564,3 +603,26 @@ class Postgresql:
                 self.connector.close()
         except Exception:
             pass
+
+    def do_sql_with_retry(self, sql: str, params: Optional[Dict[str, Any]] = None):
+        """
+        SQL実行をリトライする。接続エラーなど一時的な障害に対処するための補助関数。
+
+        Args:
+            sql(str): 実行するSQL文。
+            params(Optional[Dict[str, Any]]): SQLに渡す名前付きパラメータ。
+        """
+        last_error = None
+        for attempt in range(1, self._connect_retry_count + 1):
+            try:
+                result = self.connector.execute(sql, params)
+                return result
+            except Exception as exc:
+                self.logger.warning(f"PostgreSQL operation failed on attempt {attempt}: {exc}")
+                last_error = exc
+                self.rollback()
+                if attempt >= self._connect_retry_count:
+                    break
+                self.logger.info(f"PostgreSQL operation failed ({attempt}/{self._connect_retry_count}); retrying.")
+        raise last_error
+    

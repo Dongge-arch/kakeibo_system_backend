@@ -230,7 +230,13 @@ class MasterDataApi(BaseRestApi):
 
     def list_invoice(self):
         """インボイス登録マスタの有効データを取得する。"""
-        rows = self.database.select("SELECT * FROM invoice_registration WHERE DEL_FLAG = 0")
+        rows = self.database.select(
+            """
+            SELECT INV_REG_NUM, SUP_NAME, TAX_FLAG
+            FROM invoice_registration
+            WHERE DEL_FLAG = 0
+            """
+        )
         return json_response(200, [self.invoice_response(row) for row in rows])
 
     def delete_invoice(self, body):
@@ -254,14 +260,14 @@ class MasterDataApi(BaseRestApi):
         self.database.execute(
             """
             UPDATE invoice_registration
-            SET IMG = '', SUP_NAME = :SUP_NAME, TAX_FLAG = :TAX_FLAG
+            SET SUP_NAME = :SUP_NAME, TAX_FLAG = :TAX_FLAG
             WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
             """,
             params,
         )
         rows = self.database.select(
             """
-            SELECT INV_REG_NUM, IMG, SUP_NAME, TAX_FLAG
+            SELECT INV_REG_NUM, SUP_NAME, TAX_FLAG
             FROM invoice_registration
             WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
             """,

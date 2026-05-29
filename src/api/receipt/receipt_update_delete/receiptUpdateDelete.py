@@ -161,7 +161,6 @@ class ReceiptUpdateDelete(BaseRestApi):
             "UPD_PROG": "ReceiptUpdateDelete",
             "INV_REG_NUM": invoice_number,
             "SUP_NAME": receipt_info.get("supplierName"),
-            "IMG": "",
             "TAX_FLAG": receipt_info.get("taxFlag"),
             "CRE_DT": now_dt.strftime("%Y%m%d"),
             "CRE_TM": now_dt.strftime("%H%M%S"),
@@ -177,7 +176,6 @@ class ReceiptUpdateDelete(BaseRestApi):
             UPD_DT = :UPD_DT,
             UPD_TM = :UPD_TM,
             SUP_NAME = COALESCE(:SUP_NAME, SUP_NAME),
-            IMG = '',
             TAX_FLAG = COALESCE(:TAX_FLAG, TAX_FLAG)
         WHERE INV_REG_NUM = :INV_REG_NUM
           AND DEL_FLAG = 0
@@ -192,7 +190,6 @@ class ReceiptUpdateDelete(BaseRestApi):
             UPD_PROG,
             INV_REG_NUM,
             SUP_NAME,
-            IMG,
             TAX_FLAG,
             CRE_DT,
             CRE_TM,
@@ -204,7 +201,6 @@ class ReceiptUpdateDelete(BaseRestApi):
             :UPD_PROG,
             :INV_REG_NUM,
             :SUP_NAME,
-            :IMG,
             :TAX_FLAG,
             :CRE_DT,
             :CRE_TM,

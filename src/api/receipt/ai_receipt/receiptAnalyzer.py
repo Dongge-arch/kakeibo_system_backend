@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import time
 
 import requests
 
@@ -273,6 +274,9 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 class GeminiReceiptAnalyzer:
     """Gemini REST API を使ってレシート画像またはレシート本文を解析する。"""
 
+    api_retry_count = 5
+    api_retry_delay_seconds = 1
+
     def __init__(self, api_key: str | None = None, model: str | None = None, timeout: int = 40):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or ""
         self.model = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash-lite"
@@ -310,7 +314,7 @@ class GeminiReceiptAnalyzer:
         )
         payload = {"contents": [{"parts": parts}]}
 
-        response = requests.post(url, json=payload, timeout=self.timeout)
+        response = self.post_with_retry(url, payload)
         response.raise_for_status()
         data = response.json()
 
@@ -333,6 +337,30 @@ class GeminiReceiptAnalyzer:
             raise ValueError("Gemini の返答に text がありません。")
 
         return content_parts[0]["text"], usage
+
+    def post_with_retry(self, url: str, payload: dict):
+        """Gemini API retry: 5 attempts, 1 second wait for any HTTP/API connection error."""
+        last_error = None
+        for attempt in range(1, self.api_retry_count + 1):
+            try:
+                response = requests.post(url, json=payload, timeout=self.timeout)
+                response.raise_for_status()
+                return response
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt >= self.api_retry_count:
+                    raise
+                log.warning(
+                    "Gemini API call failed (%s/%s); retrying in %s second.",
+                    attempt,
+                    self.api_retry_count,
+                    self.api_retry_delay_seconds,
+                )
+                time.sleep(self.api_retry_delay_seconds)
+        raise last_error
+
+    def should_retry_api_error(self, exc: Exception) -> bool:
+        return isinstance(exc, requests.RequestException)
 
     def call_gemini_with_image_bytes(self, image_bytes: bytes, mime_type: str, prompt: str) -> tuple[str, dict]:
         """画像バイナリとプロンプトを Gemini REST API に渡す。"""
