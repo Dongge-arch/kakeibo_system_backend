@@ -64,8 +64,8 @@ class PostgresqlRow(dict, Base):
         for key, value in dict(row).items():
             normalized[key] = value
             if isinstance(key, str):
-                normalized.setdefault(key.upper(), value)
-                normalized.setdefault(key.lower(), value)
+                # normalized.setdefault(key.upper(), value)
+                # normalized.setdefault(key.lower(), value)
                 alias = self._camel_aliases.get(key.lower())
                 if alias:
                     normalized.setdefault(alias, value)
@@ -214,6 +214,7 @@ class Postgresql(Base):
         """
         オブジェクト破棄時にDB接続を閉じる。
         """
+        self.commit()
         self.close()
 
     def select(self, sql: str, params: Optional[Any] = None) -> List[Dict]:
@@ -246,7 +247,6 @@ class Postgresql(Base):
         sql, params = self.apply_user_scope(sql, params or {}, "execute")
 
         result = self.do_sql_with_retry(sql, params)
-        self.commit()
         return self.extract_rowcount(result)
 
     def insert(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
@@ -263,7 +263,6 @@ class Postgresql(Base):
         sql, params = self.apply_user_scope(sql, params or {}, "insert")
         # PostgreSQLはINSERTの実行結果に更新件数を返すため、リトライはexecuteと同様に行う。
         result = self.do_sql_with_retry(sql, params)
-        self.commit()
         return self.extract_rowcount(result)
 
     def update(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
@@ -278,7 +277,6 @@ class Postgresql(Base):
             int: 更新件数。
         """
         result = self.do_sql_with_retry(sql, params)
-        self.commit()
         return self.extract_rowcount(result)
 
     def execute_many(self, sql: str, params_list: List[Dict[str, Any]]) -> int:
@@ -294,7 +292,6 @@ class Postgresql(Base):
         """
 
         result = self.do_sql_with_retry(sql, params_list)
-        self.commit()
         return self.extract_rowcount(result)
 
     def begin(self):
@@ -581,7 +578,6 @@ class Postgresql(Base):
                     self.read_sql("CREATE_TABLES_POSTGRES", location=__file__)
                 ):
                     self.connector.execute(statement)
-                self.connector.commit()
                 self._initialized_urls.add(database_url)
             except Exception:
                 self.connector.rollback()

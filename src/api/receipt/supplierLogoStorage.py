@@ -50,8 +50,19 @@ class SupplierLogoStorage:
         return f"{self.prefix}/{invoice_number}" if self.prefix else invoice_number
 
     def upload(self, invoice_number: str, image_value) -> str:
+        log.info("Uploading supplier logo for invoice %s.", invoice_number)
         key = self.key_for(invoice_number)
-        if not self.enabled() or not key or not image_value:
+        if not self.enabled():
+            log.warning(
+                "Skipped supplier logo upload because S3 bucket is not configured for invoice %s.",
+                invoice_number,
+            )
+            return ""
+        if not key or not image_value:
+            log.warning(
+                "Skipped supplier logo upload because image payload is empty for invoice %s.",
+                invoice_number,
+            )
             return ""
 
         body, content_type = self._decode_image(image_value)
@@ -76,6 +87,12 @@ class SupplierLogoStorage:
                 Key=key,
                 Body=body,
                 ContentType=content_type,
+            )
+            log.info(
+                "Uploaded supplier logo for invoice %s to S3 key %s in bucket %s.",
+                invoice_number,
+                key,
+                self.bucket,
             )
             return key
         except Exception:
