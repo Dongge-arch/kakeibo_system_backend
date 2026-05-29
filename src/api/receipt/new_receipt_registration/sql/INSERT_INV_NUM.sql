@@ -13,14 +13,14 @@ INSERT INTO invoice_registration (
     UPD_TM,
     DEL_FLAG
 ) VALUES (
-    :CRE_PROG,
-    :UPD_PROG,
-    :INV_REG_NUM,
-    :SUP_NAME,
-    :TAX_FLAG,
-    :CRE_DT,
-    :CRE_TM,
-    :UPD_DT,
-    :UPD_TM,
-    :DEL_FLAG
+    %(CRE_PROG)s,
+    %(UPD_PROG)s,
+    %(INV_REG_NUM)s,
+    %(SUP_NAME)s,
+    %(TAX_FLAG)s,
+    %(CRE_DT)s,
+    %(CRE_TM)s,
+    %(UPD_DT)s,
+    %(UPD_TM)s,
+    %(DEL_FLAG)s
 );

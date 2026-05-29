@@ -228,7 +228,6 @@ class Postgresql(Base):
             List[Dict]: 検索結果行のリスト。
         """
         sql, params = self.apply_user_scope(sql, params or {}, "select")
-        sql = self.convert_placeholders(sql)
         result = self.do_sql_with_retry(sql, params)
         rows = result.fetchall()
         return [PostgresqlRow(dict(row)) for row in rows]
@@ -245,8 +244,7 @@ class Postgresql(Base):
             int: 更新件数。
         """
         sql, params = self.apply_user_scope(sql, params or {}, "execute")
-        # 既存SQLの :NAME 形式を psycopg の %(NAME)s 形式へ変換する。
-        sql = self.convert_placeholders(sql)
+
         result = self.do_sql_with_retry(sql, params)
         self.commit()
         return self.extract_rowcount(result)
@@ -263,7 +261,6 @@ class Postgresql(Base):
             int: 更新件数。
         """
         sql, params = self.apply_user_scope(sql, params or {}, "insert")
-        sql = self.convert_placeholders(sql)
         # PostgreSQLはINSERTの実行結果に更新件数を返すため、リトライはexecuteと同様に行う。
         result = self.do_sql_with_retry(sql, params)
         self.commit()
@@ -295,7 +292,7 @@ class Postgresql(Base):
         Returns:
             int: 更新件数。
         """
-        sql = self.convert_placeholders(sql)
+
         result = self.do_sql_with_retry(sql, params_list)
         self.commit()
         return self.extract_rowcount(result)
@@ -320,17 +317,6 @@ class Postgresql(Base):
         self.connector.rollback()
         self.logger.info("ロールバック完了")
 
-    def convert_placeholders(self, sql: str) -> str:
-        """
-        既存SQLの名前付きプレースホルダをpsycopg形式へ変換する。
-
-        Args:
-            sql(str): 変換対象のSQL文。
-
-        Returns:
-            str: psycopg形式のプレースホルダへ変換したSQL文。
-        """
-        return self._pattern.sub(lambda m: f"%({m.group(1)})s", sql)
 
     def extract_rowcount(self, result: Any) -> int:
         """
@@ -377,6 +363,47 @@ class Postgresql(Base):
 
         return sql, params
 
+    def find_matching_parenthesis(self, sql: str, start_index: int) -> int:
+        """
+        指定位置の開き括弧に対応する閉じ括弧を、文字列・クォートを考慮して探索する。
+
+        Args:
+            sql(str): 探索対象のSQL文。
+            start_index(int): 開き括弧の位置。
+
+        Returns:
+            int: 対応する閉じ括弧の位置。
+        """
+        depth = 1
+        in_single_quote = False
+        in_double_quote = False
+        escape = False
+
+        for index in range(start_index + 1, len(sql)):
+            char = sql[index]
+            if escape:
+                escape = False
+                continue
+            if char == "\\":
+                escape = True
+                continue
+            if char == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+                continue
+            if char == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+                continue
+            if in_single_quote or in_double_quote:
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+
+        raise ValueError("Unbalanced parentheses in SQL")
+
     def scope_insert(self, sql: str, params: Dict[str, Any]):
         """
         INSERT文へ作成ユーザー・更新ユーザー列を自動付与する。
@@ -388,36 +415,51 @@ class Postgresql(Base):
         Returns:
             tuple[str, Dict[str, Any]]: 所有者列を反映したSQLとパラメータ。
         """
-        match = re.search(
-            r"INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\((.*?)\)\s*VALUES\s*\((.*?)\)",
+        table_match = re.search(
+            r"INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",
             sql,
-            re.IGNORECASE | re.DOTALL,
+            re.IGNORECASE,
         )
-        if not match:
+        if not table_match:
             return sql, params
 
-        table = match.group(1).lower()
+        table = table_match.group(1).lower()
         if table not in self._owned_tables:
             return sql, params
 
-        columns = match.group(2)
-        values = match.group(3)
+        columns_start = table_match.end() - 1
+        columns_end = self.find_matching_parenthesis(sql, columns_start)
+        values_match = re.search(r"\bVALUES\b", sql[columns_end + 1:], re.IGNORECASE)
+        if not values_match:
+            return sql, params
+
+        values_offset = columns_end + 1 + values_match.start()
+        values_start = values_offset + values_match.end()
+        values_open = re.search(r"\(", sql[values_start:], re.IGNORECASE)
+        if not values_open:
+            return sql, params
+
+        values_open_index = values_start + values_open.start()
+        values_end = self.find_matching_parenthesis(sql, values_open_index)
+
+        columns = sql[columns_start + 1:columns_end]
+        values = sql[values_open_index + 1:values_end]
         upper_columns = columns.upper()
         add_columns = []
         add_values = []
         if "CRE_USER_ID" not in upper_columns:
             add_columns.append("CRE_USER_ID")
-            add_values.append(":__current_user_id")
+            add_values.append("%(__current_user_id)s")
         if "UPD_USER_ID" not in upper_columns:
             add_columns.append("UPD_USER_ID")
-            add_values.append(":__current_user_id")
+            add_values.append("%(__current_user_id)s")
 
         if not add_columns:
             return sql, params
 
         new_columns = f"{columns.rstrip()},\n    " + ",\n    ".join(add_columns)
         new_values = f"{values.rstrip()},\n    " + ",\n    ".join(add_values)
-        sql = sql[:match.start(2)] + new_columns + sql[match.end(2):match.start(3)] + new_values + sql[match.end(3):]
+        sql = sql[:columns_start + 1] + new_columns + sql[columns_end:values_open_index + 1] + new_values + sql[values_end:]
         return sql, params
 
     def strip_leading_comments(self, sql: str) -> str:
@@ -462,9 +504,9 @@ class Postgresql(Base):
 
         if "UPD_USER_ID" not in sql.upper():
             insert_at = match.end()
-            sql = sql[:insert_at] + "UPD_USER_ID = :__current_user_id,\n" + sql[insert_at:]
+            sql = sql[:insert_at] + "UPD_USER_ID = %(__current_user_id)s,\n" + sql[insert_at:]
 
-        condition = f"{table}.CRE_USER_ID = :__current_user_id"
+        condition = f"{table}.CRE_USER_ID = %(__current_user_id)s"
         return self.append_condition(sql, condition), params
 
     def scope_select(self, sql: str, params: Dict[str, Any]):
@@ -488,7 +530,7 @@ class Postgresql(Base):
                 alias = match.group(1) or table
                 if alias.upper() in self._reserved_aliases:
                     alias = table
-                condition = f"{alias}.CRE_USER_ID = :__current_user_id"
+                condition = f"{alias}.CRE_USER_ID = %(__current_user_id)s"
                 if condition not in conditions:
                     conditions.append(condition)
 
@@ -588,7 +630,7 @@ class Postgresql(Base):
             SELECT column_name
             FROM information_schema.columns
             WHERE table_schema = 'kakeibo'
-              AND table_name = :table
+              AND table_name = %(table)s
             """,
             {"table": table.lower()},
         )
@@ -601,8 +643,8 @@ class Postgresql(Base):
         try:
             if hasattr(self, "connector") and self.connector:
                 self.connector.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            self.logger.warning(f"Failed to close PostgreSQL connection: {exc}", exc_info=True)
 
     def do_sql_with_retry(self, sql: str, params: Optional[Dict[str, Any]] = None):
         """

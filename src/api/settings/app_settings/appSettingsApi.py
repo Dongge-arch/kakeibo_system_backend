@@ -121,7 +121,7 @@ class AppSettingsApi(BaseRestApi):
                 FROM ai_usage_log
                 WHERE DEL_FLAG = 0
                   AND FEATURE = 'receipt_ai'
-                  AND CRE_DT = :CRE_DT
+                  AND CRE_DT = %(CRE_DT)s
                 """,
                 {"CRE_DT": ymd},
             )
@@ -137,7 +137,7 @@ class AppSettingsApi(BaseRestApi):
                 FROM ai_usage_log
                 WHERE DEL_FLAG = 0
                   AND FEATURE = 'receipt_ai'
-                  AND CRE_DT LIKE :CRE_MONTH
+                  AND CRE_DT LIKE %(CRE_MONTH)s
                 """,
                 {"CRE_MONTH": f"{month_prefix}%"},
             )
@@ -188,10 +188,10 @@ class AppSettingsApi(BaseRestApi):
               DAY_DARK, AUTO_DAY_DARK, SUNRISE, SUNSET,
               CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
             ) VALUES (
-              :CRE_PROG, :UPD_PROG,
-              :BUT_ON_OFF, :BUT_CAT, :BUDGET_PERIOD,
-              :DAY_DARK, :AUTO_DAY_DARK, :SUNRISE, :SUNSET,
-              :CRE_DT, :CRE_TM, :UPD_DT, :UPD_TM, :DEL_FLAG
+              %(CRE_PROG)s, %(UPD_PROG)s,
+              %(BUT_ON_OFF)s, %(BUT_CAT)s, %(BUDGET_PERIOD)s,
+              %(DAY_DARK)s, %(AUTO_DAY_DARK)s, %(SUNRISE)s, %(SUNSET)s,
+              %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(DEL_FLAG)s
             )
             """,
             {
@@ -246,9 +246,9 @@ class AppSettingsApi(BaseRestApi):
               DAY_DARK, AUTO_DAY_DARK, SUNRISE, SUNSET,
               CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
             ) VALUES (
-              :CRE_PROG, :UPD_PROG, :BUT_ON_OFF, :BUT_CAT, :BUDGET_PERIOD,
-              :DAY_DARK, :AUTO_DAY_DARK, :SUNRISE, :SUNSET,
-              :CRE_DT, :CRE_TM, :UPD_DT, :UPD_TM, 0
+              %(CRE_PROG)s, %(UPD_PROG)s, %(BUT_ON_OFF)s, %(BUT_CAT)s, %(BUDGET_PERIOD)s,
+              %(DAY_DARK)s, %(AUTO_DAY_DARK)s, %(SUNRISE)s, %(SUNSET)s,
+              %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, 0
             )
             """,
             {

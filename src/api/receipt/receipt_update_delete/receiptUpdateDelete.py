@@ -82,7 +82,7 @@ class ReceiptUpdateDelete(BaseRestApi):
         sql = """
                 SELECT RET_ID, INV_REG_NUM, SUP_NAME, RET_DT, RET_TM, RET_DET_CNT, TOA_PRICE
                 FROM receipt_info
-                WHERE RET_ID = :receipt_id
+                WHERE RET_ID = %(receipt_id)s
                 """
         
         result = self.database.select(sql=sql,params={"receipt_id" :receipt_id})
@@ -105,7 +105,7 @@ class ReceiptUpdateDelete(BaseRestApi):
         SELECT RET_ID, ITEM_NAME, CAT1, CAT2, TAX_RATE, QTY, UT, UT_PRE, TO_PRE,
                UT_TAX_EXCLUDED, TO_TAX_EXCLUDED, UT_TAX_INCLUDED, TO_TAX_INCLUDED
         FROM receipt_detail
-        WHERE RET_ID = :receipt_id
+        WHERE RET_ID = %(receipt_id)s 
         AND DEL_FLAG = 0
         """
 
@@ -172,12 +172,12 @@ class ReceiptUpdateDelete(BaseRestApi):
         update_sql = """
         UPDATE invoice_registration
         SET
-            UPD_PROG = :UPD_PROG,
-            UPD_DT = :UPD_DT,
-            UPD_TM = :UPD_TM,
-            SUP_NAME = COALESCE(:SUP_NAME, SUP_NAME),
-            TAX_FLAG = COALESCE(:TAX_FLAG, TAX_FLAG)
-        WHERE INV_REG_NUM = :INV_REG_NUM
+            UPD_PROG = %(UPD_PROG)s,
+            UPD_DT = %(UPD_DT)s,
+            UPD_TM = %(UPD_TM)s,
+            SUP_NAME = COALESCE(%(SUP_NAME)s, SUP_NAME),
+            TAX_FLAG = COALESCE(%(TAX_FLAG)s, TAX_FLAG)
+        WHERE INV_REG_NUM = %(INV_REG_NUM)s
           AND DEL_FLAG = 0
         """
         updated_count = self.database.update(update_sql, params=params)
@@ -197,16 +197,16 @@ class ReceiptUpdateDelete(BaseRestApi):
             UPD_TM,
             DEL_FLAG
         ) VALUES (
-            :CRE_PROG,
-            :UPD_PROG,
-            :INV_REG_NUM,
-            :SUP_NAME,
-            :TAX_FLAG,
-            :CRE_DT,
-            :CRE_TM,
-            :UPD_DT,
-            :UPD_TM,
-            :DEL_FLAG
+            %(CRE_PROG)s,
+            %(UPD_PROG)s,
+            %(INV_REG_NUM)s,
+            %(SUP_NAME)s,
+            %(TAX_FLAG)s,
+            %(CRE_DT)s,
+            %(CRE_TM)s,
+            %(UPD_DT)s,
+            %(UPD_TM)s,
+            %(DEL_FLAG)s
         )
         """
         self.database.insert(insert_sql, params=params)
@@ -281,11 +281,11 @@ class ReceiptUpdateDelete(BaseRestApi):
         sql = """
         UPDATE receipt_info
         SET 
-        UPD_PROG = :UPD_PROG,
-        UPD_DT = :UPD_DT,
-        UPD_TM = :UPD_TM,
+        UPD_PROG = %(UPD_PROG)s,
+        UPD_DT = %(UPD_DT)s,
+        UPD_TM = %(UPD_TM)s,
         del_flag = 1    
-        WHERE RET_ID = :receipt_id
+        WHERE RET_ID = %(receipt_id)s
         AND del_flag = 0;
         """
 
@@ -300,10 +300,10 @@ class ReceiptUpdateDelete(BaseRestApi):
         sql = """
         UPDATE receipt_detail
                 SET del_flag = 1,
-                UPD_PROG = :UPD_PROG,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-                WHERE RET_ID = :receipt_id
+                UPD_PROG = %(UPD_PROG)s,
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+                WHERE RET_ID = %(receipt_id)s
                 AND del_flag = 0;
                 """
         self.database.update(sql, params=params)

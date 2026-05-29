@@ -48,8 +48,8 @@ class IncomeApi(BaseRestApi):
                 SAL_COMMENT, SAL_AMT, CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
             )
             VALUES (
-                :CRE_PROG, :UPD_PROG, :SAL_DATE, :SAL_NAME, :SAL_CAT, :SAL_SUB_CAT,
-                :SAL_COMMENT, :SAL_AMT, :CRE_DT, :CRE_TM, :UPD_DT, :UPD_TM, :DEL_FLAG
+                %(CRE_PROG)s, %(UPD_PROG)s, %(SAL_DATE)s, %(SAL_NAME)s, %(SAL_CAT)s, %(SAL_SUB_CAT)s,
+                %(SAL_COMMENT)s, %(SAL_AMT)s, %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(DEL_FLAG)s
             )
             """,
             {
@@ -75,10 +75,10 @@ class IncomeApi(BaseRestApi):
         sql = "SELECT * FROM salary_info WHERE DEL_FLAG = 0"
         params = {}
         if body.get("month"):
-            sql += " AND SAL_DATE LIKE :SAL_DATE_PREFIX"
+            sql += " AND SAL_DATE LIKE %(SAL_DATE_PREFIX)s"
             params["SAL_DATE_PREFIX"] = f"{body['month'].replace('-', '')}%"
         elif body.get("dateFrom") and body.get("dateTo"):
-            sql += " AND SAL_DATE >= :DATE_FROM AND SAL_DATE <= :DATE_TO"
+            sql += " AND SAL_DATE >= %(DATE_FROM)s AND SAL_DATE <= %(DATE_TO)s"
             params["DATE_FROM"] = datetime.strptime(body["dateFrom"], "%Y-%m-%d").strftime("%Y%m%d")
             params["DATE_TO"] = datetime.strptime(body["dateTo"], "%Y-%m-%d").strftime("%Y%m%d")
 
@@ -110,14 +110,14 @@ class IncomeApi(BaseRestApi):
         self.database.execute(
             """
             UPDATE salary_info
-            SET SAL_DATE = :SAL_DATE,
-                SAL_NAME = :SAL_NAME,
-                SAL_CAT = :SAL_CAT,
-                SAL_AMT = :SAL_AMT,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM,
+            SET SAL_DATE = %(SAL_DATE)s,
+                SAL_NAME = %(SAL_NAME)s,
+                SAL_CAT = %(SAL_CAT)s,
+                SAL_AMT = %(SAL_AMT)s,
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s,
                 DEL_FLAG = 0
-            WHERE id = :id AND DEL_FLAG = 0
+            WHERE id = %(id)s AND DEL_FLAG = 0
             """,
             {
                 "SAL_DATE": salary_date,
@@ -140,8 +140,8 @@ class IncomeApi(BaseRestApi):
         self.database.execute(
             """
             UPDATE salary_info
-            SET DEL_FLAG = 1, UPD_DT = :UPD_DT, UPD_TM = :UPD_TM
-            WHERE id = :id AND DEL_FLAG = 0
+            SET DEL_FLAG = 1, UPD_DT = %(UPD_DT)s, UPD_TM = %(UPD_TM)s
+            WHERE id = %(id)s AND DEL_FLAG = 0
             """,
             {"UPD_DT": ymd, "UPD_TM": hms, "id": income_id},
         )

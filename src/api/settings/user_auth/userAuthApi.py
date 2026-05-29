@@ -64,7 +64,7 @@ class UserAuthApi(BaseRestApi):
         exists = self.database.select(
             """
             SELECT USER_ID FROM user_info
-            WHERE USER_NAME = :USER_NAME
+            WHERE USER_NAME = %(USER_NAME)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
@@ -83,10 +83,10 @@ class UserAuthApi(BaseRestApi):
               CRE_DT, CRE_TM, UPD_DT, UPD_TM,
               CRE_USER_ID, UPD_USER_ID, DEL_FLAG
             ) VALUES (
-              :CRE_PROG, :UPD_PROG, :USER_ID, :USER_NAME, :NICKNAME,
-              :USER_PASSWORD, :PASSWORD_HASH, :PASSWORD_SALT,
-              :CRE_DT, :CRE_TM, :UPD_DT, :UPD_TM,
-              :CRE_USER_ID, :UPD_USER_ID, 0
+              %(CRE_PROG)s, %(UPD_PROG)s, %(USER_ID)s, %(USER_NAME)s, %(NICKNAME)s,
+              %(USER_PASSWORD)s, %(PASSWORD_HASH)s, %(PASSWORD_SALT)s,
+              %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s,
+              %(CRE_USER_ID)s, %(UPD_USER_ID)s, 0
             )
             """,
             {
@@ -120,7 +120,7 @@ class UserAuthApi(BaseRestApi):
             """
             SELECT USER_ID, USER_NAME, NICKNAME, AVATAR_IMAGE, USER_PASSWORD, PASSWORD_HASH, PASSWORD_SALT
             FROM user_info
-            WHERE USER_NAME = :USER_NAME
+            WHERE USER_NAME = %(USER_NAME)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
@@ -148,7 +148,7 @@ class UserAuthApi(BaseRestApi):
             """
             SELECT USER_ID, USER_NAME, NICKNAME, AVATAR_IMAGE
             FROM user_info
-            WHERE USER_ID = :USER_ID
+            WHERE USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
@@ -186,12 +186,12 @@ class UserAuthApi(BaseRestApi):
         self.database.update(
             """
             UPDATE user_info
-            SET UPD_PROG = :UPD_PROG,
-                NICKNAME = :NICKNAME,
-                AVATAR_IMAGE = :AVATAR_IMAGE,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-            WHERE USER_ID = :USER_ID
+            SET UPD_PROG = %(UPD_PROG)s,
+                NICKNAME = %(NICKNAME)s,
+                AVATAR_IMAGE = %(AVATAR_IMAGE)s,
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+            WHERE USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             """,
             {
@@ -207,7 +207,7 @@ class UserAuthApi(BaseRestApi):
             """
             SELECT USER_ID, USER_NAME, NICKNAME, AVATAR_IMAGE
             FROM user_info
-            WHERE USER_ID = :USER_ID
+            WHERE USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
@@ -232,7 +232,7 @@ class UserAuthApi(BaseRestApi):
             """
             SELECT USER_ID
             FROM user_info
-            WHERE USER_NAME = :USER_NAME
+            WHERE USER_NAME = %(USER_NAME)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
@@ -252,14 +252,14 @@ class UserAuthApi(BaseRestApi):
         self.database.update(
             """
             UPDATE user_info
-            SET UPD_PROG = :UPD_PROG,
-                RESET_TOKEN_HASH = :RESET_TOKEN_HASH,
-                RESET_TOKEN_SALT = :RESET_TOKEN_SALT,
-                RESET_TOKEN_EXPIRES_AT = :RESET_TOKEN_EXPIRES_AT,
+            SET UPD_PROG = %(UPD_PROG)s,
+                RESET_TOKEN_HASH = %(RESET_TOKEN_HASH)s,
+                RESET_TOKEN_SALT = %(RESET_TOKEN_SALT)s,
+                RESET_TOKEN_EXPIRES_AT = %(RESET_TOKEN_EXPIRES_AT)s,
                 RESET_TOKEN_USED = 0,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-            WHERE USER_ID = :USER_ID
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+            WHERE USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             """,
             {
@@ -290,7 +290,7 @@ class UserAuthApi(BaseRestApi):
             """
             SELECT USER_ID, RESET_TOKEN_HASH, RESET_TOKEN_SALT, RESET_TOKEN_EXPIRES_AT, RESET_TOKEN_USED
             FROM user_info
-            WHERE USER_NAME = :USER_NAME
+            WHERE USER_NAME = %(USER_NAME)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
@@ -307,17 +307,17 @@ class UserAuthApi(BaseRestApi):
         self.database.update(
             """
             UPDATE user_info
-            SET UPD_PROG = :UPD_PROG,
-                USER_PASSWORD = :USER_PASSWORD,
-                PASSWORD_HASH = :PASSWORD_HASH,
-                PASSWORD_SALT = :PASSWORD_SALT,
+            SET UPD_PROG = %(UPD_PROG)s,
+                USER_PASSWORD = %(USER_PASSWORD)s,
+                PASSWORD_HASH = %(PASSWORD_HASH)s,
+                PASSWORD_SALT = %(PASSWORD_SALT)s,
                 RESET_TOKEN_HASH = NULL,
                 RESET_TOKEN_SALT = NULL,
                 RESET_TOKEN_EXPIRES_AT = NULL,
                 RESET_TOKEN_USED = 1,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-            WHERE USER_ID = :USER_ID
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+            WHERE USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             """,
             {

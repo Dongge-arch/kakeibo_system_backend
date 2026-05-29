@@ -9,6 +9,7 @@ import logging
 import os
 import re
 
+from src.api.utils import normalize_invoice_number
 from src.common.config import APP_CONFIG
 
 
@@ -39,8 +40,13 @@ class SupplierLogoStorage:
 
     def key_for(self, invoice_number: str) -> str:
         invoice_number = str(invoice_number or "").strip().upper()
-        if not invoice_number.startswith("T"):
+        if not invoice_number:
             return ""
+
+        normalized = normalize_invoice_number(invoice_number)
+        if normalized:
+            invoice_number = normalized
+
         return f"{self.prefix}/{invoice_number}" if self.prefix else invoice_number
 
     def upload(self, invoice_number: str, image_value) -> str:
@@ -50,6 +56,17 @@ class SupplierLogoStorage:
 
         body, content_type = self._decode_image(image_value)
         if not body:
+            raw_value = str(image_value or "").strip()
+            if raw_value.startswith(("http://", "https://")):
+                log.warning(
+                    "Skipped supplier logo upload for remote URL image for invoice %s.",
+                    invoice_number,
+                )
+            else:
+                log.warning(
+                    "Skipped supplier logo upload because image payload could not be decoded for invoice %s.",
+                    invoice_number,
+                )
             return ""
 
         try:
@@ -79,6 +96,7 @@ class SupplierLogoStorage:
                 ExpiresIn=self.expires_in,
             )
         except Exception:
+            log.exception("Failed to build supplier logo URL from S3.")
             return ""
 
     def _client(self):

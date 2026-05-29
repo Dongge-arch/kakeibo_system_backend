@@ -170,7 +170,7 @@ class ReceiptReference(BaseRestApi):
                 """
         
         if receipt_id:
-            sql += " AND re.RET_ID = :receipt_id "
+            sql += " AND re.RET_ID = %(receipt_id)s "
             params["receipt_id"] = receipt_id
         
         for i in [time_sql,date_sql,inm_sql,receipt_amount_sql]:
@@ -202,7 +202,7 @@ class ReceiptReference(BaseRestApi):
 
         id_params = {f"receipt_id_{idx}": receipt_id for idx, receipt_id in enumerate(receipt_id_list)}
         params.update(id_params)
-        placeholders = ",".join([f":receipt_id_{idx}" for idx in range(len(receipt_id_list))])
+        placeholders = ",".join([f"%({f'receipt_id_{idx}'})s" for idx in range(len(receipt_id_list))])
 
         sql = f"""
         SELECT *
@@ -228,12 +228,12 @@ class ReceiptReference(BaseRestApi):
         over_time = body.get("timeTo",None)
         params = {}
         if start_time is not None and over_time is not None :
-            sql = "AND RET_TM BETWEEN :time_from AND :time_to "
+            sql = "AND RET_TM BETWEEN %(time_from)s AND %(time_to)s "
             params["time_from"] = start_time
             params["time_to"] = over_time
         
         elif start_time is not None or over_time is not None:
-            sql = "AND RET_TM = :time_exact "
+            sql = "AND RET_TM = %(time_exact)s "
             params["time_exact"] = start_time if start_time is not None else over_time
         else:
             sql = ""
@@ -250,12 +250,12 @@ class ReceiptReference(BaseRestApi):
         params = {}
 
         if start_date is not None  and over_date is not None :
-            sql = "AND RET_DT BETWEEN :date_from AND :date_to "
+            sql = "AND RET_DT BETWEEN %(date_from)s AND %(date_to)s "
             params["date_from"] = start_date
             params["date_to"] = over_date
         
         elif start_date is not None or over_date is not None:
-            sql = "AND RET_DT = :date_exact "
+            sql = "AND RET_DT = %(date_exact)s "
             params["date_exact"] = start_date if start_date is not None else over_date
         else:
             sql = ""
@@ -281,15 +281,15 @@ class ReceiptReference(BaseRestApi):
                 min_amount, max_amount = max_amount, min_amount
             params["total_min"] = min_amount
             params["total_max"] = max_amount
-            return "AND TOA_PRICE BETWEEN :total_min AND :total_max ", params
+            return "AND TOA_PRICE BETWEEN %(total_min)s AND %(total_max)s ", params
 
         if min_amount is not None:
             params["total_min"] = min_amount
-            return "AND TOA_PRICE >= :total_min ", params
+            return "AND TOA_PRICE >= %(total_min)s ", params
 
         if max_amount is not None:
             params["total_max"] = max_amount
-            return "AND TOA_PRICE <= :total_max ", params
+            return "AND TOA_PRICE <= %(total_max)s ", params
 
         return "", params
         
@@ -314,15 +314,15 @@ class ReceiptReference(BaseRestApi):
                 min_amount, max_amount = max_amount, min_amount
             params["price_min"] = min_amount
             params["price_max"] = max_amount
-            return "AND TO_PRE BETWEEN :price_min AND :price_max ", params
+            return "AND TO_PRE BETWEEN %(price_min)s AND %(price_max)s ", params
 
         if min_amount is not None:
             params["price_min"] = min_amount
-            return "AND TO_PRE >= :price_min ", params
+            return "AND TO_PRE >= %(price_min)s ", params
 
         if max_amount is not None:
             params["price_max"] = max_amount
-            return "AND TO_PRE <= :price_max ", params
+            return "AND TO_PRE <= %(price_max)s ", params
 
         return "", params
     
@@ -332,10 +332,10 @@ class ReceiptReference(BaseRestApi):
         sql=""
         params = {}
         if body.get("category1"):
-            sql += "AND CAT1 = :category1 "
+            sql += "AND CAT1 = %(category1)s "
             params["category1"] = body.get("category1")
         if body.get("category2"):
-            sql += "AND CAT2 = :category2 "
+            sql += "AND CAT2 = %(category2)s "
             params["category2"] = body.get("category2")
 
         return sql, params
@@ -345,11 +345,11 @@ class ReceiptReference(BaseRestApi):
         sql = ""
         params = {}
         if body.get("invoiceRegistrationNumber"):
-            sql += "AND re.INV_REG_NUM = :invoice_registration_number "
+            sql += "AND re.INV_REG_NUM = %(invoice_registration_number)s "
             params["invoice_registration_number"] = body.get("invoiceRegistrationNumber")
 
         if body.get("supplierName"):
-            sql += "AND re.SUP_NAME = :supplier_name "
+            sql += "AND re.SUP_NAME = %(supplier_name)s "
             params["supplier_name"] = body.get("supplierName")
 
         

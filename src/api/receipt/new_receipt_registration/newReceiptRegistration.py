@@ -307,7 +307,7 @@ class NewReceiptRegistration(BaseRestApi):
                 """
                 SELECT RET_ID
                 FROM receipt_info
-                WHERE INV_REG_NUM = :INV_REG_NUM
+                WHERE INV_REG_NUM = %(INV_REG_NUM)s
                   AND DEL_FLAG = 0
                 LIMIT 1
                 """,

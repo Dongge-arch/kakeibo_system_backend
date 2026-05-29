@@ -109,9 +109,9 @@ class RecurringExpenseApi(BaseRestApi):
                 CAT1, CAT2, AMOUNT, TAX_FLAG, ENABLED, LAST_RUN_MONTH, MEMO,
                 CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
             ) VALUES (
-                :CRE_PROG, :UPD_PROG, :RULE_NAME, :DAY_OF_MONTH, :ITEM_NAME,
-                :CAT1, :CAT2, :AMOUNT, :TAX_FLAG, :ENABLED, :LAST_RUN_MONTH, :MEMO,
-                :CRE_DT, :CRE_TM, :UPD_DT, :UPD_TM, 0
+                %(CRE_PROG)s, %(UPD_PROG)s, %(RULE_NAME)s, %(DAY_OF_MONTH)s, %(ITEM_NAME)s,
+                %(CAT1)s, %(CAT2)s, %(AMOUNT)s, %(TAX_FLAG)s, %(ENABLED)s, %(LAST_RUN_MONTH)s, %(MEMO)s,
+                %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, 0
             )
             """,
             data,
@@ -129,18 +129,18 @@ class RecurringExpenseApi(BaseRestApi):
             """
             UPDATE recurring_expense
             SET UPD_PROG = 'RecurringExpenseApi',
-                RULE_NAME = :RULE_NAME,
-                DAY_OF_MONTH = :DAY_OF_MONTH,
-                ITEM_NAME = :ITEM_NAME,
-                CAT1 = :CAT1,
-                CAT2 = :CAT2,
-                AMOUNT = :AMOUNT,
-                TAX_FLAG = :TAX_FLAG,
-                ENABLED = :ENABLED,
-                MEMO = :MEMO,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-            WHERE id = :id
+                RULE_NAME = %(RULE_NAME)s,
+                DAY_OF_MONTH = %(DAY_OF_MONTH)s,
+                ITEM_NAME = %(ITEM_NAME)s,
+                CAT1 = %(CAT1)s,
+                CAT2 = %(CAT2)s,
+                AMOUNT = %(AMOUNT)s,
+                TAX_FLAG = %(TAX_FLAG)s,
+                ENABLED = %(ENABLED)s,
+                MEMO = %(MEMO)s,
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+            WHERE id = %(id)s
               AND DEL_FLAG = 0
             """,
             data,
@@ -157,9 +157,9 @@ class RecurringExpenseApi(BaseRestApi):
             UPDATE recurring_expense
             SET UPD_PROG = 'RecurringExpenseApi',
                 DEL_FLAG = 1,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-            WHERE id = :id
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+            WHERE id = %(id)s
               AND DEL_FLAG = 0
             """,
             {"id": rule_id, "UPD_DT": ymd, "UPD_TM": hms},
@@ -175,7 +175,7 @@ class RecurringExpenseApi(BaseRestApi):
             FROM recurring_expense
             WHERE DEL_FLAG = 0
               AND ENABLED = 1
-              AND (LAST_RUN_MONTH IS NULL OR LAST_RUN_MONTH <> :current_month)
+              AND (LAST_RUN_MONTH IS NULL OR LAST_RUN_MONTH <> %(current_month)s)
             ORDER BY DAY_OF_MONTH, id
             """,
             {"current_month": current_month},
@@ -230,11 +230,11 @@ class RecurringExpenseApi(BaseRestApi):
         self.database.update(
             """
             UPDATE recurring_expense
-            SET LAST_RUN_MONTH = :LAST_RUN_MONTH,
+            SET LAST_RUN_MONTH = %(LAST_RUN_MONTH)s,
                 UPD_PROG = 'RecurringExpenseApi',
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-            WHERE id = :id
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+            WHERE id = %(id)s
             """,
             {"id": rule_id, "LAST_RUN_MONTH": month, "UPD_DT": ymd, "UPD_TM": hms},
         )

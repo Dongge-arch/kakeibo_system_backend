@@ -6,6 +6,6 @@ SELECT
 FROM 
 budget_info 
 WHERE 
-CAT1 = :CAT1 
+CAT1 = %(CAT1)s 
 AND 
-CAT2 = :CAT2
+CAT2 = %(CAT2)s

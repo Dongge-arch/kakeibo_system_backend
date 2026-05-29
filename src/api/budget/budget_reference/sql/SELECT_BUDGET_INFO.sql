@@ -8,8 +8,8 @@ BUT_AMT as budgetAmount
 FROM 
 budget_info
 WHERE
-CAT1 = :CAT1
+CAT1 = %(CAT1)s
 AND
-CAT2 = :CAT2
+CAT2 = %(CAT2)s
 AND
 DEL_FLAG = 0

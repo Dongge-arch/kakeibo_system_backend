@@ -100,9 +100,9 @@ class AiReceiptApi(BaseRestApi):
               TAX_FLAG, TOA_PRICE, AI_IMAGE_MIME_TYPE, AI_OUTPUT_JSON,
               EDITED_RECEIPT_JSON, STATUS, CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
             ) VALUES (
-              :CRE_PROG, :UPD_PROG, :ANALYSIS_ID, :INV_REG_NUM, :SUP_NAME, :RET_DT, :RET_TM,
-              :TAX_FLAG, :TOA_PRICE, :AI_IMAGE_MIME_TYPE, :AI_OUTPUT_JSON,
-              :EDITED_RECEIPT_JSON, :STATUS, :CRE_DT, :CRE_TM, :UPD_DT, :UPD_TM, 0
+              %(CRE_PROG)s, %(UPD_PROG)s, %(ANALYSIS_ID)s, %(INV_REG_NUM)s, %(SUP_NAME)s, %(RET_DT)s, %(RET_TM)s,
+              %(TAX_FLAG)s, %(TOA_PRICE)s, %(AI_IMAGE_MIME_TYPE)s, %(AI_OUTPUT_JSON)s,
+              %(EDITED_RECEIPT_JSON)s, %(STATUS)s, %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, 0
             )
             """,
             {
@@ -150,19 +150,19 @@ class AiReceiptApi(BaseRestApi):
         updated = self.database.execute(
             """
             UPDATE ai_receipt_analysis
-            SET UPD_PROG = :UPD_PROG,
-                RET_ID = :RET_ID,
-                INV_REG_NUM = :INV_REG_NUM,
-                SUP_NAME = :SUP_NAME,
-                RET_DT = :RET_DT,
-                RET_TM = :RET_TM,
-                TAX_FLAG = :TAX_FLAG,
-                TOA_PRICE = :TOA_PRICE,
-                EDITED_RECEIPT_JSON = :EDITED_RECEIPT_JSON,
-                STATUS = :STATUS,
-                UPD_DT = :UPD_DT,
-                UPD_TM = :UPD_TM
-            WHERE ANALYSIS_ID = :ANALYSIS_ID
+            SET UPD_PROG = %(UPD_PROG)s,
+                RET_ID = %(RET_ID)s,
+                INV_REG_NUM = %(INV_REG_NUM)s,
+                SUP_NAME = %(SUP_NAME)s,
+                RET_DT = %(RET_DT)s,
+                RET_TM = %(RET_TM)s,
+                TAX_FLAG = %(TAX_FLAG)s,
+                TOA_PRICE = %(TOA_PRICE)s,
+                EDITED_RECEIPT_JSON = %(EDITED_RECEIPT_JSON)s,
+                STATUS = %(STATUS)s,
+                UPD_DT = %(UPD_DT)s,
+                UPD_TM = %(UPD_TM)s
+            WHERE ANALYSIS_ID = %(ANALYSIS_ID)s
               AND DEL_FLAG = 0
             """,
             {
@@ -243,7 +243,7 @@ class AiReceiptApi(BaseRestApi):
               CRE_DT as createdDate,
               CRE_TM as createdTime
             FROM ai_receipt_analysis
-            WHERE ANALYSIS_ID = :ANALYSIS_ID
+            WHERE ANALYSIS_ID = %(ANALYSIS_ID)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
@@ -403,9 +403,9 @@ class AiReceiptApi(BaseRestApi):
               PROMPT_TOKENS, OUTPUT_TOKENS, TOTAL_TOKENS, CACHED_TOKENS, THOUGHTS_TOKENS,
               CRE_DT, CRE_TM, DEL_FLAG
             ) VALUES (
-              :CRE_PROG, :PROVIDER, :MODEL, :FEATURE, :STATUS_CODE, :ERROR_CODE,
-              :PROMPT_TOKENS, :OUTPUT_TOKENS, :TOTAL_TOKENS, :CACHED_TOKENS, :THOUGHTS_TOKENS,
-              :CRE_DT, :CRE_TM, 0
+              %(CRE_PROG)s, %(PROVIDER)s, %(MODEL)s, %(FEATURE)s, %(STATUS_CODE)s, %(ERROR_CODE)s,
+              %(PROMPT_TOKENS)s, %(OUTPUT_TOKENS)s, %(TOTAL_TOKENS)s, %(CACHED_TOKENS)s, %(THOUGHTS_TOKENS)s,
+              %(CRE_DT)s, %(CRE_TM)s, 0
             )
             """,
             {

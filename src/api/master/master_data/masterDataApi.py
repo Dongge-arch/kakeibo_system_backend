@@ -61,7 +61,7 @@ class MasterDataApi(BaseRestApi):
         if not name:
             return {"statusCode": 400, "error": "category1_name is required"}
         self.database.execute(
-            "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (:CATEGORY1_NAME)",
+            "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (%(CATEGORY1_NAME)s)",
             {"CATEGORY1_NAME": name},
         )
         return {"statusCode": 201, "message": "Category1 added successfully"}
@@ -72,7 +72,7 @@ class MasterDataApi(BaseRestApi):
         if not name:
             return {"statusCode": 400, "error": "category1_name is required"}
         self.database.execute(
-            "UPDATE receipt_info_category1 SET DEL_FLAG = 1 WHERE CATEGORY1_NAME = :CATEGORY1_NAME",
+            "UPDATE receipt_info_category1 SET DEL_FLAG = 1 WHERE CATEGORY1_NAME = %(CATEGORY1_NAME)s",
             {"CATEGORY1_NAME": name},
         )
         return {"statusCode": 200, "message": "Category1 deleted successfully"}
@@ -100,7 +100,7 @@ class MasterDataApi(BaseRestApi):
         self.database.execute(
             """
             INSERT INTO receipt_info_category2 (CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE)
-            VALUES (:CATEGORY1_NAME, :CATEGORY2_NAME, :TAX_RATE)
+            VALUES (%(CATEGORY1_NAME)s, %(CATEGORY2_NAME)s, %(TAX_RATE)s)
             """,
             {
                 "CATEGORY1_NAME": category1_name,
@@ -120,7 +120,7 @@ class MasterDataApi(BaseRestApi):
             """
             UPDATE receipt_info_category2
             SET DEL_FLAG = 1
-            WHERE CATEGORY1_NAME = :CATEGORY1_NAME AND CATEGORY2_NAME = :CATEGORY2_NAME
+            WHERE CATEGORY1_NAME = %(CATEGORY1_NAME)s AND CATEGORY2_NAME = %(CATEGORY2_NAME)s
             """,
             {"CATEGORY1_NAME": category1_name, "CATEGORY2_NAME": category2_name},
         )
@@ -153,7 +153,7 @@ class MasterDataApi(BaseRestApi):
             if name in existing_category1:
                 continue
             self.database.execute(
-                "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (:CATEGORY1_NAME)",
+                "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (%(CATEGORY1_NAME)s)",
                 {"CATEGORY1_NAME": name},
             )
             existing_category1.add(name)
@@ -169,7 +169,7 @@ class MasterDataApi(BaseRestApi):
                 continue
             if category1_name not in existing_category1:
                 self.database.execute(
-                    "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (:CATEGORY1_NAME)",
+                    "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (%(CATEGORY1_NAME)s)",
                     {"CATEGORY1_NAME": category1_name},
                 )
                 existing_category1.add(category1_name)
@@ -180,7 +180,7 @@ class MasterDataApi(BaseRestApi):
             self.database.execute(
                 """
                 INSERT INTO receipt_info_category2 (CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE)
-                VALUES (:CATEGORY1_NAME, :CATEGORY2_NAME, :TAX_RATE)
+                VALUES (%(CATEGORY1_NAME)s, %(CATEGORY2_NAME)s, %(TAX_RATE)s)
                 """,
                 {
                     "CATEGORY1_NAME": category1_name,
@@ -195,7 +195,7 @@ class MasterDataApi(BaseRestApi):
             if name in existing_salary:
                 continue
             self.database.execute(
-                "INSERT INTO salary_info_category (SAL_CAT, DEL_FLAG) VALUES (:SAL_CAT, 0)",
+                "INSERT INTO salary_info_category (SAL_CAT, DEL_FLAG) VALUES (%(SAL_CAT)s, 0)",
                 {"SAL_CAT": name},
             )
             existing_salary.add(name)
@@ -217,7 +217,7 @@ class MasterDataApi(BaseRestApi):
             """
             SELECT INV_REG_NUM, SUP_NAME AS supplierName, TAX_FLAG AS taxFlag
             FROM invoice_registration
-            WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
+            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0
             """,
             {"INV_REG_NUM": invoice_no},
         )
@@ -242,7 +242,7 @@ class MasterDataApi(BaseRestApi):
     def delete_invoice(self, body):
         """インボイス登録マスタを論理削除する。"""
         self.database.update(
-            "UPDATE invoice_registration SET DEL_FLAG = 1 WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0",
+            "UPDATE invoice_registration SET DEL_FLAG = 1 WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0",
             {"INV_REG_NUM": body.get("invoiceRegistrationNumber")},
         )
         return json_response(200, [])
@@ -260,8 +260,8 @@ class MasterDataApi(BaseRestApi):
         self.database.execute(
             """
             UPDATE invoice_registration
-            SET SUP_NAME = :SUP_NAME, TAX_FLAG = :TAX_FLAG
-            WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
+            SET SUP_NAME = %(SUP_NAME)s, TAX_FLAG = %(TAX_FLAG)s
+            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0
             """,
             params,
         )
@@ -269,7 +269,7 @@ class MasterDataApi(BaseRestApi):
             """
             SELECT INV_REG_NUM, SUP_NAME, TAX_FLAG
             FROM invoice_registration
-            WHERE INV_REG_NUM = :INV_REG_NUM AND DEL_FLAG = 0
+            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0
             """,
             {"INV_REG_NUM": invoice_number},
         )
@@ -292,7 +292,7 @@ class MasterDataApi(BaseRestApi):
         if not name:
             return {"statusCode": 400, "error": "salary_category_name is required"}
         self.database.execute(
-            "INSERT INTO salary_info_category (SAL_CAT, DEL_FLAG) VALUES (:SAL_CAT, 0)",
+            "INSERT INTO salary_info_category (SAL_CAT, DEL_FLAG) VALUES (%(SAL_CAT)s, 0)",
             {"SAL_CAT": name},
         )
         return {"statusCode": 201, "message": "Category2 added successfully"}
@@ -305,7 +305,7 @@ class MasterDataApi(BaseRestApi):
     def delete_salary_category(self, body):
         """入金分類を論理削除する。"""
         rows = self.database.update(
-            "UPDATE salary_info_category SET DEL_FLAG = 1 WHERE DEL_FLAG = 0 AND SAL_CAT = :SAL_CAT",
+            "UPDATE salary_info_category SET DEL_FLAG = 1 WHERE DEL_FLAG = 0 AND SAL_CAT = %(SAL_CAT)s",
             {"SAL_CAT": body.get("salaryCategoryName") or body.get("salary_category_name")},
         )
         return json_response(200, rows)

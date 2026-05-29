@@ -49,7 +49,7 @@ class BudgetBatchApi(BaseRestApi):
             existing = self.database.select(
                 """
                 SELECT id FROM budget_info
-                WHERE CAT1 = :CAT1 AND COALESCE(CAT2, '') = :CAT2 AND DEL_FLAG = 0
+                WHERE CAT1 = %(CAT1)s AND COALESCE(CAT2, '') = %(CAT2)s AND DEL_FLAG = 0
                 LIMIT 1
                 """,
                 {"CAT1": cat1, "CAT2": cat2},
@@ -59,11 +59,11 @@ class BudgetBatchApi(BaseRestApi):
                 self.database.execute(
                     """
                     UPDATE budget_info
-                    SET BUT_AMT = :BUT_AMT,
-                        UPD_PROG = :UPD_PROG,
-                        UPD_DT = :UPD_DT,
-                        UPD_TM = :UPD_TM
-                    WHERE id = :id
+                    SET BUT_AMT = %(BUT_AMT)s,
+                        UPD_PROG = %(UPD_PROG)s,
+                        UPD_DT = %(UPD_DT)s,
+                        UPD_TM = %(UPD_TM)s
+                    WHERE id = %(id)s
                     """,
                     {
                         "BUT_AMT": amount,
@@ -81,8 +81,8 @@ class BudgetBatchApi(BaseRestApi):
                   CRE_PROG, UPD_PROG, CAT1, CAT2, BUT_AMT,
                   CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
                 ) VALUES (
-                  :CRE_PROG, :UPD_PROG, :CAT1, :CAT2, :BUT_AMT,
-                  :CRE_DT, :CRE_TM, :UPD_DT, :UPD_TM, :DEL_FLAG
+                  %(CRE_PROG)s, %(UPD_PROG)s, %(CAT1)s, %(CAT2)s, %(BUT_AMT)s,
+                  %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(DEL_FLAG)s
                 )
                 """,
                 {
