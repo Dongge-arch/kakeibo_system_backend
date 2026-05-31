@@ -7,6 +7,7 @@ from contextvars import ContextVar
 
 _current_user_id = ContextVar("current_user_id", default="")
 _current_user = ContextVar("current_user", default={})
+_current_request_headers = ContextVar("current_request_headers", default={})
 
 
 def set_current_user_id(user_id: str):
@@ -38,6 +39,21 @@ def reset_current_user(tokens):
     id_token, user_token = tokens
     _current_user_id.reset(id_token)
     _current_user.reset(user_token)
+
+
+def set_current_request_headers(headers: dict):
+    """現在リクエストのHTTPヘッダーを保存する。"""
+    return _current_request_headers.set(dict(headers or {}))
+
+
+def reset_current_request_headers(token):
+    """現在リクエストのHTTPヘッダーコンテキストを元に戻す。"""
+    _current_request_headers.reset(token)
+
+
+def get_current_request_headers() -> dict:
+    """現在リクエストのHTTPヘッダーを取得する。"""
+    return dict(_current_request_headers.get() or {})
 
 
 def get_current_user() -> dict:

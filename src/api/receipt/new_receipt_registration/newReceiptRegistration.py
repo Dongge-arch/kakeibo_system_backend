@@ -64,7 +64,6 @@ class NewReceiptRegistration(BaseRestApi):
         Returns:
             Dict[str, Any]: 標準化されたAPIレスポンス。
         """
-        self.logger.info(f"リクエストボディ: {request_dict.get('body')}")
         body = request_dict.get("body", {})
         receipt_info = body.get("receiptInfo", {})
         if not body:

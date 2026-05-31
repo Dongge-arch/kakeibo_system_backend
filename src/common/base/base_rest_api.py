@@ -68,6 +68,7 @@ class BaseRestApi(Base, ABC):
 
     def call(
         self,
+        request_body: Optional[dict] = None,
         body: Optional[dict] = None,
         headers: Optional[dict] = None,
         validate_h=False,
@@ -77,7 +78,7 @@ class BaseRestApi(Base, ABC):
         """Run an API class directly from app.py."""
         request_dict = {
             "headers": headers or {},
-            "body": body or {},
+            "body": request_body or body or {},
             **self.get_request_system(),
             **kwargs,
         }

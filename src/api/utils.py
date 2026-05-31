@@ -6,6 +6,8 @@ import json
 import re
 from datetime import datetime
 
+from src.common.auth_context import get_current_request_headers
+
 
 def now_ymd_hms():
     """既存DB形式に合わせた現在日付・時刻を返す。"""
@@ -130,9 +132,15 @@ def normalize_api_body(body):
     return to_camel_payload(body)
 
 
-def call_api(api, body, default_status_code=200):
+def call_api(api, request_body, default_status_code=200):
     """FastAPIルートからBaseRestApi実装を呼び出す薄いアダプタ。"""
-    result = api.call(body=body or {}, headers={})
+    body = request_body.get("body", {})
+    if "headers" in request_body:
+        headers = request_body["headers"]
+    else:
+        headers = get_current_request_headers()
+
+    result = api.call(request_body=request_body or {}, body=body, headers=headers)
     return {
         "statusCode": result.get("statusCode", default_status_code),
         "body": normalize_api_body(result.get("body")),

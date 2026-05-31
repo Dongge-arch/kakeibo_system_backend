@@ -47,7 +47,7 @@ from src.api.receipt.receipt_export.receiptExport import ReceiptExportService
 from src.api.settings.app_settings.appSettingsApi import AppSettingsApi
 from src.api.settings.user_auth.userAuthApi import UserAuthApi
 from src.api.utils import call_api, json_response, normalize_invoice_number, normalize_receipt_number
-from src.common.auth_context import reset_current_user, set_current_user
+from src.common.auth_context import reset_current_request_headers, reset_current_user, set_current_request_headers, set_current_user
 from src.common.auth_token import verify_token
 from src.common.config import APP_CONFIG
 
@@ -95,18 +95,22 @@ app.add_middleware(
 )
 
 
-def local_api(api_class, body=None, default_status_code=200, **kwargs):
+def extract_request_headers(request):
+    return dict(request.headers)
+
+
+def local_api(api_class, request_body=None, default_status_code=200, **kwargs):
     """
     APIクラスを生成して共通レスポンス形式で呼び出す。
 
     Args:
         api_class (type): 呼び出すBaseRestApi派生クラス。
-        body (dict | None): APIへ渡すリクエスト本文。
+        request_body (dict | None): APIへ渡すリクエスト本文。
         default_status_code (int): APIがstatusCodeを返さない場合の既定HTTPステータス。
         **kwargs: APIクラスのコンストラクタへ渡す追加設定。
     """
     api = api_class(**kwargs)
-    return call_api(api, body or {}, default_status_code=default_status_code)
+    return call_api(api, request_body=request_body or {}, default_status_code=default_status_code)
 
 
 @app.middleware("http")
@@ -152,6 +156,7 @@ async def add_no_cache_headers(request, call_next):
         "nickname": header_user.get("nickname") or token_user.get("nickname") or "",
     }
     context_token = set_current_user(context_user)
+    headers_token = set_current_request_headers(extract_request_headers(request))
     try:
         response = await call_next(request)
         if (
@@ -164,6 +169,7 @@ async def add_no_cache_headers(request, call_next):
             response.headers["Expires"] = "0"
         return response
     finally:
+        reset_current_request_headers(headers_token)
         reset_current_user(context_token)
 
 
