@@ -36,6 +36,7 @@ class BudgetReference(BaseRestApi):
         """
         self.logger.info(f"リクエストボディ: {request_dict.get('body')}")
         body = request_dict.get("body", {})
+        user_id = self.require_user_id(request_dict)
         if not body:
             raise Error(status_code=510,
                         error_code="1000062",
@@ -44,7 +45,7 @@ class BudgetReference(BaseRestApi):
         budget_list = body.get("budget_list") or body.get("budgets") or []
         response_list=[]
         for budget_info in budget_list:
-            result = self.select_budget_record(budget_info=budget_info)
+            result = self.select_budget_record(budget_info=budget_info, user_id=user_id)
             response_list.extend(result or [])
 
         return response(status_code=200, body=response_list)
@@ -62,11 +63,12 @@ class BudgetReference(BaseRestApi):
         return super().exception(e)
     
 
-    def select_budget_record(self, budget_info: dict):
+    def select_budget_record(self, budget_info: dict, user_id: str):
         """指定された大分類・小分類に一致する予算情報を取得する。"""
         params={
             "CAT1":budget_info.get("category1"),
             "CAT2":budget_info.get("category2"),
+            "USER_ID": user_id,
         }
         sql = self.database.read_sql("SELECT_BUDGET_INFO", location=__file__)
         result=self.database.select(sql,params=params)

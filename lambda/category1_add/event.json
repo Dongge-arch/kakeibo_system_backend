@@ -1,0 +1,10 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "add_category1",
+    "category1Name": "新しい分類"
+  }
+}

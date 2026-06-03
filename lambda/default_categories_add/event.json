@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "add_default_categories",
+    "category1": ["食費", "交通費", "医療費"],
+    "category2": [
+      {"category1": "食費", "category2": "飲料", "taxRate": 10},
+      {"category1": "食費", "category2": "お菓子", "taxRate": 10}
+    ],
+    "salaryCategories": ["給与", "ボーナス"]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "add_salary_category",
+    "salaryCategoryName": "新しい給与分類"
+  }
+}

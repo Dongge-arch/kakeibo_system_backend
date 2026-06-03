@@ -40,6 +40,7 @@ class ReceiptReference(BaseRestApi):
 
 
         body = request_dict.get("body", {})
+        user_id = self.require_user_id(request_dict)
 
 
         # 時刻フォーマット変換 00:00 -> 0000
@@ -71,6 +72,7 @@ class ReceiptReference(BaseRestApi):
         receipt_params = {}
         for condition_params in [time_params, date_params, inm_params, receipt_amount_params]:
             receipt_params.update(condition_params)
+        receipt_params["user_id"] = user_id
 
         receipt_result = self.select_receipt_info(
             receipt_id,
@@ -86,6 +88,7 @@ class ReceiptReference(BaseRestApi):
         detail_params = {}
         detail_params.update(detail_price_params)
         detail_params.update(category_params)
+        detail_params["user_id"] = user_id
 
         details_result = self.select_receipt_details(
             receipt_id_list=receipt_id_list,
@@ -122,7 +125,6 @@ class ReceiptReference(BaseRestApi):
                         "receiptId": r.get("RET_ID"),
                         "supplierName": r.get("SUP_NAME"),
                         "supplierImage": supplier_image,
-                        "img": supplier_image,
                         "receiptDate": r.get("RET_DT"),
                         "receiptTime": r.get("RET_TM"),
                         "taxFlag": r.get("TAX_FLAG", ""),
@@ -167,6 +169,7 @@ class ReceiptReference(BaseRestApi):
                 re.TOA_PRICE
             FROM receipt_info re
             WHERE re.DEL_FLAG = 0
+              AND re.CRE_USER_ID = %(user_id)s
                 """
         
         if receipt_id:
@@ -181,11 +184,10 @@ class ReceiptReference(BaseRestApi):
 
         sql = sql +"ORDER BY RET_ID DESC LIMIT 5000 ;"
 
-        result = self.database.select(sql=sql, params=params)
-        self.attach_supplier_images(result)
+        result = self.attach_supplier_images(self.database.select(sql=sql, params=params))
         return result if result else []
 
-    def attach_supplier_images(self, rows: list[Dict[str, Any]]) -> None:
+    def attach_supplier_images(self, rows: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
         """検索済みレシートへS3上の店舗ロゴURLを後付けする。"""
         logo_cache = {}
         for row in rows:
@@ -193,6 +195,8 @@ class ReceiptReference(BaseRestApi):
             if invoice_number not in logo_cache:
                 logo_cache[invoice_number] = self.logo_storage.url_for(invoice_number)
             row["SUPPLIER_LOGO"] = logo_cache[invoice_number]
+        
+        return rows
 
     def select_receipt_details(self, receipt_id_list: list, detail_price_sql: str, category_sql: str, params) -> list[Dict[str, Any]]:
         """対象レシートIDに紐づく明細情報を検索条件付きで取得する。"""
@@ -209,6 +213,7 @@ class ReceiptReference(BaseRestApi):
         FROM receipt_detail
         WHERE RET_ID IN ({placeholders}) 
         AND DEL_FLAG = 0
+        AND CRE_USER_ID = %(user_id)s
         """
 
         if detail_price_sql is not None:

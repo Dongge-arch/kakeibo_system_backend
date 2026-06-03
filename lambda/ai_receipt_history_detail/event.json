@@ -1,0 +1,10 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "get_history",
+    "analysisId": "analysis-001"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "save_final_receipt",
+    "analysisId": "analysis-001",
+    "receiptInfo": {
+      "invoiceRegistrationNumber": "INV001",
+      "supplierName": "商店A",
+      "receiptDate": "2026-06-01",
+      "receiptTime": "12:00"
+    }
+  }
+}

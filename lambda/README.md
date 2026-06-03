@@ -1,6 +1,17 @@
 # Lambda handlers
 
-- `api_handler.py`: API Gateway / Lambda Function URL から FastAPI アプリ全体を Mangum 経由で呼び出す入口です。
-- `requirements-layer.txt`: Lambda Layer に入れる Python 依存関係です。
+Each API has its own folder and `lambda_function.py`.
 
-関数 zip には `lambda/*.py` の薄い handler だけを含めます。`backend/`、`src/`、依存ライブラリ、AI レシート解析クラスは Layer zip に分離します。
+The handler should stay thin:
+
+```python
+from src.api.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
+
+
+def lambda_handler(event, context):
+    return NewReceiptRegistration().lambda_handler(event, context)
+```
+
+When an API class still uses an internal `action` switch, the corresponding
+handler only adds that `action` or API Gateway path/query parameters to
+`event["body"]`, then calls the class directly.

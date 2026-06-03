@@ -1,0 +1,11 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "delete_category2",
+    "category1Name": "食費",
+    "category2Name": "削除対象"
+  }
+}

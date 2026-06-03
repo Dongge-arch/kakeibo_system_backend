@@ -70,7 +70,6 @@ Globals:
       - arm64
     Environment:
       Variables:
-        KAKEIBO_SERVE_STATIC: "false"
         KAKEIBO_DATABASE_TYPE: "postgresql"
         KAKEIBO_DATABASE_URL: !Ref KakeiboDatabaseUrl
         KAKEIBO_DATABASE_INITIALIZE: !Ref KakeiboDatabaseInitialize
@@ -82,11 +81,11 @@ Globals:
       - !Ref HomeKakeiboLayerArn
 
 Resources:
-  HomeKakeiboApiFunction:
+  ReceiptRegistrationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: home-kakeibo-api-function
-      Handler: lambda.api_handler.handler
+      FunctionName: home-kakeibo-receipt-registration
+      Handler: lambda.receipt_registration.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -103,8 +102,1043 @@ Resources:
         Api:
           Type: HttpApi
           Properties:
-            Path: /{proxy+}
-            Method: ANY
+            Path: /receipt/newReceiptRegistration
+            Method: POST
+  ReceiptReferenceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-receipt-reference
+      Handler: lambda.receipt_reference.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/receiptReference
+            Method: POST
+  ReceiptUpdateDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-receipt-update-delete
+      Handler: lambda.receipt_update_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/ReceiptUpdateDelete
+            Method: PUT
+  BudgetRegistrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-budget-registration
+      Handler: lambda.budget_registration.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /budget/budgetregistration
+            Method: POST
+  BudgetReferenceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-budget-reference
+      Handler: lambda.budget_reference.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /budget/budgetreference
+            Method: POST
+  BudgetListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-budget-list
+      Handler: lambda.budget_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /budget/budgets
+            Method: GET
+  BudgetUpsertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-budget-upsert
+      Handler: lambda.budget_upsert.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /budget/budgets
+            Method: POST
+  AppSettingsGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-app-settings-get
+      Handler: lambda.app_settings_get.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /app/settings
+            Method: GET
+  AppSettingsSaveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-app-settings-save
+      Handler: lambda.app_settings_save.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /app/settings
+            Method: POST
+  DashboardLayoutGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-dashboard-layout-get
+      Handler: lambda.dashboard_layout_get.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /dashboard/layout
+            Method: GET
+  DashboardLayoutSaveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-dashboard-layout-save
+      Handler: lambda.dashboard_layout_save.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /dashboard/layout
+            Method: POST
+  UserRegisterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-user-register
+      Handler: lambda.user_register.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /user/register
+            Method: POST
+  UserLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-user-login
+      Handler: lambda.user_login.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /user/login
+            Method: POST
+  UserPasswordResetRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-user-password-reset-request
+      Handler: lambda.user_password_reset_request.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /user/password-reset/request
+            Method: POST
+  UserPasswordResetConfirmFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-user-password-reset-confirm
+      Handler: lambda.user_password_reset_confirm.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /user/password-reset/confirm
+            Method: POST
+  UserLogoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-user-logout
+      Handler: lambda.user_logout.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /user/logout
+            Method: POST
+  UserMeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-user-me
+      Handler: lambda.user_me.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /user/me
+            Method: POST
+  UserProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-user-profile
+      Handler: lambda.user_profile.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /user/profile
+            Method: POST
+  RecurringExpensesListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-recurring-expenses-list
+      Handler: lambda.recurring_expenses_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /recurring-expenses
+            Method: GET
+  RecurringExpensesCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-recurring-expenses-create
+      Handler: lambda.recurring_expenses_create.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /recurring-expenses
+            Method: POST
+  RecurringExpensesUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-recurring-expenses-update
+      Handler: lambda.recurring_expenses_update.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /recurring-expenses/{rule_id}
+            Method: PUT
+  RecurringExpensesDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-recurring-expenses-delete
+      Handler: lambda.recurring_expenses_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /recurring-expenses/{rule_id}
+            Method: DELETE
+  RecurringExpensesRunDueFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-recurring-expenses-run-due
+      Handler: lambda.recurring_expenses_run_due.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /recurring-expenses/run-due
+            Method: POST
+  AiReceiptAnalyzeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-ai-receipt-analyze
+      Handler: lambda.ai_receipt_analyze.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /ai/receipt/analyze
+            Method: POST
+  AiReceiptUsageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-ai-receipt-usage
+      Handler: lambda.ai_receipt_usage.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /ai/receipt/usage
+            Method: GET
+  AiReceiptHistoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-ai-receipt-history
+      Handler: lambda.ai_receipt_history.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /ai/receipt/history
+            Method: GET
+  AiReceiptHistoryDetailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-ai-receipt-history-detail
+      Handler: lambda.ai_receipt_history_detail.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /ai/receipt/history/{analysis_id}
+            Method: GET
+  AiReceiptHistoryFinalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-ai-receipt-history-final
+      Handler: lambda.ai_receipt_history_final.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /ai/receipt/history/final
+            Method: POST
+  Category1ListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-category1-list
+      Handler: lambda.category1_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/getcategory1
+            Method: GET
+  Category1AddFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-category1-add
+      Handler: lambda.category1_add.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/addcategory1
+            Method: POST
+  Category1DeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-category1-delete
+      Handler: lambda.category1_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/deletecategory1
+            Method: PUT
+  Category2ListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-category2-list
+      Handler: lambda.category2_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/getcategory2
+            Method: GET
+  Category2AddFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-category2-add
+      Handler: lambda.category2_add.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/addcategory2
+            Method: POST
+  Category2DeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-category2-delete
+      Handler: lambda.category2_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/deletecategory2
+            Method: PUT
+  DefaultCategoriesAddFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-default-categories-add
+      Handler: lambda.default_categories_add.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/adddefaultcategories
+            Method: POST
+  SupplierByInvoiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-supplier-by-invoice
+      Handler: lambda.supplier_by_invoice.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/getSupplierByInvoice
+            Method: GET
+  SalaryCategoryAddFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-salary-category-add
+      Handler: lambda.salary_category_add.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/addsalarycategory
+            Method: POST
+  SalaryCategoryListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-salary-category-list
+      Handler: lambda.salary_category_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/getsalarycategory
+            Method: GET
+  SalaryCategoryDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-salary-category-delete
+      Handler: lambda.salary_category_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/deletesalarycategory
+            Method: PUT
+  InvoiceListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-invoice-list
+      Handler: lambda.invoice_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/getinvoice
+            Method: GET
+  InvoiceDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-invoice-delete
+      Handler: lambda.invoice_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/deleteinvoice
+            Method: PUT
+  InvoiceUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-invoice-update
+      Handler: lambda.invoice_update.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/updateinvoice
+            Method: POST
+  IncomeCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-income-create
+      Handler: lambda.income_create.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/salaryregistration
+            Method: POST
+  IncomeListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-income-list
+      Handler: lambda.income_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/getincome
+            Method: GET
+  IncomeUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-income-update
+      Handler: lambda.income_update.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/updateincome
+            Method: PUT
+  IncomeDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-income-delete
+      Handler: lambda.income_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /receipt/deleteincome
+            Method: PUT
 
 Outputs:
   ApiUrl:

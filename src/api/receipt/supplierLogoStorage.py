@@ -19,24 +19,35 @@ log = logging.getLogger(__name__)
 class SupplierLogoStorage:
     def __init__(self):
         storage_config = APP_CONFIG.get("storage") or {}
-        self.bucket = (
-            os.environ.get("SUPPLIER_LOGO_S3_BUCKET")
-            or storage_config.get("supplier_logo_bucket")
-            or ""
+        self.bucket = self._setting(
+            "SUPPLIER_LOGO_S3_BUCKET",
+            storage_config,
+            "supplier_logo_bucket",
+            "",
         )
-        self.prefix = (
-            os.environ.get("SUPPLIER_LOGO_S3_PREFIX")
-            or storage_config.get("supplier_logo_prefix")
-            or "supplier-logos"
+        self.prefix = self._setting(
+            "SUPPLIER_LOGO_S3_PREFIX",
+            storage_config,
+            "supplier_logo_prefix",
+            "supplier-logos",
         ).strip("/")
         self.expires_in = int(
-            os.environ.get("SUPPLIER_LOGO_URL_EXPIRES")
-            or storage_config.get("supplier_logo_url_expires")
-            or 3600
+            self._setting(
+                "SUPPLIER_LOGO_URL_EXPIRES",
+                storage_config,
+                "supplier_logo_url_expires",
+                3600,
+            )
         )
 
     def enabled(self) -> bool:
         return bool(self.bucket)
+
+    def _setting(self, env_name: str, config: dict, config_name: str, default):
+        env_value = os.environ.get(env_name)
+        if env_value:
+            return env_value
+        return config.get(config_name) or default
 
     def key_for(self, invoice_number: str) -> str:
         invoice_number = str(invoice_number or "").strip().upper()
@@ -107,14 +118,37 @@ class SupplierLogoStorage:
         try:
             client = self._client()
             client.head_object(Bucket=self.bucket, Key=key)
-            return client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": self.bucket, "Key": key},
-                ExpiresIn=self.expires_in,
-            )
-        except Exception:
+            return self._presigned_url(client, key)
+        except Exception as e:
+            if self._is_not_found_error(e):
+                return ""
+            if self._is_access_denied_error(e):
+                log.warning(
+                    "Could not verify supplier logo object with head_object; returning presigned URL for key %s.",
+                    key,
+                )
+                return self._presigned_url(self._client(), key)
             log.exception("Failed to build supplier logo URL from S3.")
             return ""
+
+    def _is_not_found_error(self, error: Exception) -> bool:
+        response = getattr(error, "response", {}) or {}
+        error_code = str((response.get("Error") or {}).get("Code") or "")
+        status_code = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        return error_code in {"404", "NoSuchKey", "NotFound"} or status_code == 404
+
+    def _is_access_denied_error(self, error: Exception) -> bool:
+        response = getattr(error, "response", {}) or {}
+        error_code = str((response.get("Error") or {}).get("Code") or "")
+        status_code = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        return error_code in {"403", "AccessDenied"} or status_code == 403
+
+    def _presigned_url(self, client, key: str) -> str:
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=self.expires_in,
+        )
 
     def _client(self):
         import boto3

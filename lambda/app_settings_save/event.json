@@ -1,0 +1,14 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "save",
+    "settings": {
+      "language": "ja",
+      "currency": "JPY",
+      "notificationEnabled": true
+    }
+  }
+}

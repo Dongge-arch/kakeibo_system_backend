@@ -1,0 +1,12 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "add_category2",
+    "category1Name": "食費",
+    "category2Name": "新しいサブ分類",
+    "taxRate": 10
+  }
+}

@@ -23,7 +23,7 @@ if not defined PYTHON_VERSION set "PYTHON_VERSION=3.12"
 if not defined ARCHITECTURE set "ARCHITECTURE=arm64"
 if not defined LAYER_PLATFORM set "LAYER_PLATFORM=manylinux2014_aarch64"
 if not defined KAKEIBO_DATABASE_INITIALIZE set "KAKEIBO_DATABASE_INITIALIZE=false"
-if not defined SUPPLIER_LOGO_S3_BUCKET set "SUPPLIER_LOGO_S3_BUCKET="
+if not defined SUPPLIER_LOGO_S3_BUCKET set "SUPPLIER_LOGO_S3_BUCKET=inv-logos"
 if not defined FRONTEND_BUILD_DRIVE set "FRONTEND_BUILD_DRIVE=K:"
 
 if not defined KAKEIBO_PYTHON (
@@ -131,8 +131,6 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 
 echo [2/9] Staging application code into Lambda layer...
-call :copy_tree "%ROOT_DIR%backend" "%LAYER_DIR%\python\backend"
-if errorlevel 1 exit /b 1
 call :copy_tree "%ROOT_DIR%src" "%LAYER_DIR%\python\src"
 if errorlevel 1 exit /b 1
 
@@ -157,10 +155,7 @@ if not defined HOME_KAKEIBO_LAYER_ARN (
 echo [INFO] Layer ARN: %HOME_KAKEIBO_LAYER_ARN%
 
 echo [6/9] Staging Lambda handler source only...
-if not exist "%FUNCTION_DIR%\lambda" mkdir "%FUNCTION_DIR%\lambda"
-copy /Y "%ROOT_DIR%lambda\__init__.py" "%FUNCTION_DIR%\lambda\__init__.py" >nul
-if errorlevel 1 exit /b 1
-copy /Y "%ROOT_DIR%lambda\api_handler.py" "%FUNCTION_DIR%\lambda\api_handler.py" >nul
+call :copy_tree "%ROOT_DIR%lambda" "%FUNCTION_DIR%\lambda"
 if errorlevel 1 exit /b 1
 
 echo [7/9] Creating Lambda handler zip...
@@ -168,7 +163,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -Path '
 if errorlevel 1 exit /b 1
 
 echo [8/9] Deploying SAM stack...
-sam deploy --template-file "%ROOT_DIR%template.yaml" --stack-name "%STACK_NAME%" --region "%AWS_REGION%" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides HomeKakeiboLayerArn="%HOME_KAKEIBO_LAYER_ARN%" KakeiboDatabaseUrl="%KAKEIBO_DATABASE_URL%" KakeiboDatabaseInitialize="%KAKEIBO_DATABASE_INITIALIZE%" KakeiboJwtSecret="%KAKEIBO_JWT_SECRET%" KakeiboApiKey="%KAKEIBO_API_KEY%" FrontendCorsOrigin="%FRONTEND_CORS_ORIGIN%" SupplierLogoBucketName="%SUPPLIER_LOGO_S3_BUCKET%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$params = @('HomeKakeiboLayerArn=' + $env:HOME_KAKEIBO_LAYER_ARN, 'KakeiboDatabaseUrl=' + $env:KAKEIBO_DATABASE_URL, 'KakeiboDatabaseInitialize=' + $env:KAKEIBO_DATABASE_INITIALIZE, 'KakeiboJwtSecret=' + $env:KAKEIBO_JWT_SECRET, 'KakeiboApiKey=' + $env:KAKEIBO_API_KEY, 'FrontendCorsOrigin=' + $env:FRONTEND_CORS_ORIGIN); if ($env:SUPPLIER_LOGO_S3_BUCKET) { $params += 'SupplierLogoBucketName=' + $env:SUPPLIER_LOGO_S3_BUCKET }; & sam deploy --template-file ($env:ROOT_DIR + 'template.yaml') --stack-name $env:STACK_NAME --region $env:AWS_REGION --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides $params; exit $LASTEXITCODE"
 if errorlevel 1 exit /b 1
 
 echo.
@@ -178,7 +173,9 @@ aws cloudformation describe-stacks --region "%AWS_REGION%" --stack-name "%STACK_
 if errorlevel 1 exit /b 1
 
 echo [9/9] Frontend deploy check...
-if defined FRONTEND_S3_URI (
+if /I "%KAKEIBO_SKIP_FRONTEND_DEPLOY%"=="true" (
+    echo [FRONTEND] KAKEIBO_SKIP_FRONTEND_DEPLOY is true. Skipping frontend upload.
+) else if defined FRONTEND_S3_URI (
     call :deploy_frontend
     if errorlevel 1 exit /b 1
 ) else (

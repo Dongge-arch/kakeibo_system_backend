@@ -15,7 +15,9 @@ from zoneinfo import ZoneInfo
 from src.common.base.base import Base
 from src.common.const.datetime import TIME_ZONE_JST
 from src.common.const.logger import REQUEST_BODY, REQUEST_HEADER, RESULT
+from src.common.auth_context import reset_current_user_id, set_current_user_id
 from src.common.database.factory import create_database
+from src.common.database.postgresql import Postgresql
 from src.common.exception import Error
 
 
@@ -68,7 +70,6 @@ class BaseRestApi(Base, ABC):
 
     def call(
         self,
-        request_body: Optional[dict] = None,
         body: Optional[dict] = None,
         headers: Optional[dict] = None,
         validate_h=False,
@@ -76,9 +77,10 @@ class BaseRestApi(Base, ABC):
         **kwargs,
     ) -> dict:
         """Run an API class directly from app.py."""
+        normalized_headers = self.normalize_headers(headers or {})
         request_dict = {
-            "headers": headers or {},
-            "body": request_body or body or {},
+            "headers": normalized_headers,
+            "body": body or {},
             **self.get_request_system(),
             **kwargs,
         }
@@ -126,6 +128,17 @@ class BaseRestApi(Base, ABC):
             return response
         finally:
             self.logger.reset_request_id()
+
+    def normalize_headers(self, headers: dict) -> dict:
+        return {str(key).lower(): value for key, value in dict(headers or {}).items()}
+
+    def require_user_id(self, request_dict: dict) -> str:
+        user_id = ""
+        if request_dict:
+            user_id = request_dict.get("headers", {}).get("x-kakeibo-user-id", "")
+        if not user_id:
+            raise Error(status_code=401, error_code="1000062", message="userId is required.")
+        return user_id
 
     def validate_headers(self, request_dict: dict):
         start = time.perf_counter()
@@ -178,3 +191,22 @@ class BaseRestApi(Base, ABC):
             else:
                 flattened[key] = value
         return flattened
+    
+    def lambda_handler(self, event, context):
+        if isinstance(event.get("body"), str):
+                body = json.loads(event.get("body") or "{}")
+        else:
+                body = event.get("body") or {}
+
+        result = self.call(
+            body=body,
+            headers=event.get("headers") or {},
+            request_id=getattr(context, "aws_request_id", None),
+        )
+        from src.api.utils import normalize_api_body
+
+        return {
+            "statusCode": result.get("statusCode", 200),
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps(normalize_api_body(result.get("body")), ensure_ascii=False, default=str),
+        }

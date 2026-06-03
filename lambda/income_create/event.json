@@ -1,0 +1,14 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "create",
+    "salaryDate": "2026-06-01",
+    "salaryName": "給与",
+    "salaryCategory": "給与",
+    "salaryAmount": 300000,
+    "salaryComment": "6月分給与"
+  }
+}

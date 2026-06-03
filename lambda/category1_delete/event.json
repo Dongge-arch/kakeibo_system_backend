@@ -1,0 +1,10 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "delete_category1",
+    "category1Name": "削除対象分類"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "receiptInfo": {
+      "invoiceRegistrationNumber": "INV001",
+      "supplierName": "株式会社サンプル",
+      "receiptDate": "2024-06-01",
+      "supplierImage": null,
+      "receiptTime": "12:00",
+      "taxFlag": 1,
+      "receiptDetailCount": 2,
+      "receiptDetails": [
+        {
+          "itemName": "商品A",
+          "category1": "食費",
+          "category2": "飲料",
+          "taxRate": 10,
+          "quantity": 2,
+          "unit": "個",
+          "unitPrice": 1000,
+          "discount": 0,
+          "totalPrice": 2000
+        },
+        {
+          "itemName": "商品B",
+          "category1": "食費",
+          "category2": "お菓子",
+          "taxRate": 10,
+          "quantity": 1,
+          "unit": "個",
+          "unitPrice": 500,
+          "discount": 0,
+          "totalPrice": 500
+        }
+      ]
+    }
+  }
+}

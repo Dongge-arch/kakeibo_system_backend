@@ -1,0 +1,10 @@
+{
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "reset_password",
+    "resetToken": "token123",
+    "newPassword": "newPassword123"
+  }
+}

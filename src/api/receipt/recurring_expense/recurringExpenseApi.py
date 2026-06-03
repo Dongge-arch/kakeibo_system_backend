@@ -24,17 +24,18 @@ class RecurringExpenseApi(BaseRestApi):
 
     def main(self, request_dict):
         body = request_dict.get("body") or {}
+        user_id = self.require_user_id(request_dict)
         action = body.get("action")
         if action == "list":
-            return self.list_rules()
+            return self.list_rules(user_id)
         if action == "create":
-            return self.create_rule(body)
+            return self.create_rule(body, user_id)
         if action == "update":
-            return self.update_rule(body)
+            return self.update_rule(body, user_id)
         if action == "delete":
-            return self.delete_rule(body)
+            return self.delete_rule(body, user_id)
         if action == "run_due":
-            return self.run_due()
+            return self.run_due(user_id)
         return json_response(400, {"errorMessage": "不明な定期出費操作です。"})
 
     def ensure_schema(self):
@@ -69,7 +70,7 @@ class RecurringExpenseApi(BaseRestApi):
         )
         self.__class__._schema_ready = True
 
-    def list_rules(self):
+    def list_rules(self, user_id):
         rows = self.database.select(
             """
             SELECT
@@ -86,12 +87,14 @@ class RecurringExpenseApi(BaseRestApi):
                 MEMO AS memo
             FROM recurring_expense
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
             ORDER BY DAY_OF_MONTH, id
-            """
+            """,
+            {"USER_ID": user_id},
         )
         return json_response(200, [self.normalize_row(row) for row in rows])
 
-    def create_rule(self, body):
+    def create_rule(self, body, user_id):
         data = self.rule_params(body, create=True)
         ymd, hms = now_ymd_hms()
         data.update({
@@ -101,30 +104,31 @@ class RecurringExpenseApi(BaseRestApi):
             "CRE_TM": hms,
             "UPD_DT": ymd,
             "UPD_TM": hms,
+            "USER_ID": user_id,
         })
         self.database.insert(
             """
             INSERT INTO recurring_expense (
                 CRE_PROG, UPD_PROG, RULE_NAME, DAY_OF_MONTH, ITEM_NAME,
                 CAT1, CAT2, AMOUNT, TAX_FLAG, ENABLED, LAST_RUN_MONTH, MEMO,
-                CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
+                CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
             ) VALUES (
                 %(CRE_PROG)s, %(UPD_PROG)s, %(RULE_NAME)s, %(DAY_OF_MONTH)s, %(ITEM_NAME)s,
                 %(CAT1)s, %(CAT2)s, %(AMOUNT)s, %(TAX_FLAG)s, %(ENABLED)s, %(LAST_RUN_MONTH)s, %(MEMO)s,
-                %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, 0
+                %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, 0
             )
             """,
             data,
         )
         return json_response(201, {"ok": True, "message": "定期出費を登録しました。"})
 
-    def update_rule(self, body):
+    def update_rule(self, body, user_id):
         rule_id = int(body.get("id") or 0)
         if rule_id <= 0:
             return json_response(400, {"errorMessage": "更新対象が不正です。"})
         data = self.rule_params(body, create=False)
         ymd, hms = now_ymd_hms()
-        data.update({"id": rule_id, "UPD_DT": ymd, "UPD_TM": hms})
+        data.update({"id": rule_id, "UPD_DT": ymd, "UPD_TM": hms, "USER_ID": user_id})
         updated = self.database.update(
             """
             UPDATE recurring_expense
@@ -139,15 +143,17 @@ class RecurringExpenseApi(BaseRestApi):
                 ENABLED = %(ENABLED)s,
                 MEMO = %(MEMO)s,
                 UPD_DT = %(UPD_DT)s,
-                UPD_TM = %(UPD_TM)s
+                UPD_TM = %(UPD_TM)s,
+                UPD_USER_ID = %(USER_ID)s
             WHERE id = %(id)s
+              AND CRE_USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             """,
             data,
         )
         return json_response(200, {"ok": bool(updated), "message": "定期出費を更新しました。"})
 
-    def delete_rule(self, body):
+    def delete_rule(self, body, user_id):
         rule_id = int(body.get("id") or 0)
         if rule_id <= 0:
             return json_response(400, {"errorMessage": "削除対象が不正です。"})
@@ -158,15 +164,17 @@ class RecurringExpenseApi(BaseRestApi):
             SET UPD_PROG = 'RecurringExpenseApi',
                 DEL_FLAG = 1,
                 UPD_DT = %(UPD_DT)s,
-                UPD_TM = %(UPD_TM)s
+                UPD_TM = %(UPD_TM)s,
+                UPD_USER_ID = %(USER_ID)s
             WHERE id = %(id)s
+              AND CRE_USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             """,
-            {"id": rule_id, "UPD_DT": ymd, "UPD_TM": hms},
+            {"id": rule_id, "UPD_DT": ymd, "UPD_TM": hms, "USER_ID": user_id},
         )
         return json_response(200, {"ok": True, "message": "定期出費を削除しました。"})
 
-    def run_due(self):
+    def run_due(self, user_id):
         today = datetime.now()
         current_month = today.strftime("%Y-%m")
         rows = self.database.select(
@@ -174,18 +182,19 @@ class RecurringExpenseApi(BaseRestApi):
             SELECT *
             FROM recurring_expense
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
               AND ENABLED = 1
               AND (LAST_RUN_MONTH IS NULL OR LAST_RUN_MONTH <> %(current_month)s)
             ORDER BY DAY_OF_MONTH, id
             """,
-            {"current_month": current_month},
+            {"current_month": current_month, "USER_ID": user_id},
         )
         created = []
         for row in rows:
             receipt_date = self.scheduled_date(today, int(self.row_value(row, "DAY_OF_MONTH", "day_of_month", "dayofmonth") or 1))
             if receipt_date.date() > today.date():
                 continue
-            receipt_id = self.create_receipt_from_rule(row, receipt_date)
+            receipt_id = self.create_receipt_from_rule(row, receipt_date, user_id)
             if not receipt_id:
                 raise ValueError("定期出費の出費明細登録に失敗しました。")
             rule_id = self.row_value(row, "id", "ID")
@@ -193,7 +202,7 @@ class RecurringExpenseApi(BaseRestApi):
             created.append({"id": rule_id, "receiptId": receipt_id})
         return json_response(200, {"ok": True, "createdCount": len(created), "created": created})
 
-    def create_receipt_from_rule(self, row, receipt_date):
+    def create_receipt_from_rule(self, row, receipt_date, user_id):
         name = self.row_value(row, "RULE_NAME", "rule_name", "rulename") or "定期出費"
         item_name = self.row_value(row, "ITEM_NAME", "item_name", "itemname") or name
         amount = float(self.row_value(row, "AMOUNT", "amount") or 0)
@@ -217,7 +226,7 @@ class RecurringExpenseApi(BaseRestApi):
             }],
         }
         api = NewReceiptRegistration()
-        result = api.call(body={"receiptInfo": receipt_info}, validate_b=False)
+        result = api.call(body={"receiptInfo": receipt_info}, headers={"x-kakeibo-user-id": user_id}, validate_b=False)
         body = result.get("body") or {}
         if isinstance(body, str):
             body = json.loads(body)
@@ -225,7 +234,7 @@ class RecurringExpenseApi(BaseRestApi):
             raise ValueError(body.get("errorMessage") or "定期出費の出費明細登録に失敗しました。")
         return body.get("receiptId")
 
-    def mark_run(self, rule_id, month):
+    def mark_run(self, rule_id, month, user_id):
         ymd, hms = now_ymd_hms()
         self.database.update(
             """
@@ -233,10 +242,12 @@ class RecurringExpenseApi(BaseRestApi):
             SET LAST_RUN_MONTH = %(LAST_RUN_MONTH)s,
                 UPD_PROG = 'RecurringExpenseApi',
                 UPD_DT = %(UPD_DT)s,
-                UPD_TM = %(UPD_TM)s
+                UPD_TM = %(UPD_TM)s,
+                UPD_USER_ID = %(USER_ID)s
             WHERE id = %(id)s
+              AND CRE_USER_ID = %(USER_ID)s
             """,
-            {"id": rule_id, "LAST_RUN_MONTH": month, "UPD_DT": ymd, "UPD_TM": hms},
+            {"id": rule_id, "LAST_RUN_MONTH": month, "UPD_DT": ymd, "UPD_TM": hms, "USER_ID": user_id},
         )
 
     def scheduled_date(self, today, day_of_month):

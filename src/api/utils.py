@@ -63,7 +63,7 @@ def normalize_tax_flag(value):
 
 
 def json_response(status_code, body):
-    """BaseRestApi と FastAPI で共通利用するレスポンス形式を作る。"""
+    """BaseRestApi で利用するレスポンス形式を作る。"""
     return {"statusCode": status_code, "body": body}
 
 
@@ -133,7 +133,7 @@ def normalize_api_body(body):
 
 
 def call_api(api, request_body, default_status_code=200):
-    """FastAPIルートからBaseRestApi実装を呼び出す薄いアダプタ。"""
+    """BaseRestApi実装を呼び出す薄いアダプタ。"""
     body = request_body.get("body", {})
     if "headers" in request_body:
         headers = request_body["headers"]
@@ -167,3 +167,4 @@ def int_token(value):
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+    

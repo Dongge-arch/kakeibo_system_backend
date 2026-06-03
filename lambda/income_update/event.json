@@ -1,0 +1,14 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "update",
+    "id": "income-001",
+    "salaryDate": "2026-06-01",
+    "salaryName": "給与",
+    "salaryCategory": "給与",
+    "salaryAmount": 310000
+  }
+}

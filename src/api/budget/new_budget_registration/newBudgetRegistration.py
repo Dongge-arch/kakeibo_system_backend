@@ -36,6 +36,7 @@ class NewBudgetRegistration(BaseRestApi):
         """
         self.logger.info(f"リクエストボディ: {request_dict.get('body')}")
         body = request_dict.get("body", {})
+        user_id = self.require_user_id(request_dict)
         if not body:
             raise Error(status_code=510,
                         error_code="1000062",
@@ -43,15 +44,15 @@ class NewBudgetRegistration(BaseRestApi):
 
         budget_info = body.get("budget_info", {})
         if budget_info.get("category1",None) and budget_info.get("category2",None):
-            select_result = self.select_budget_record(budget_info=budget_info)
+            select_result = self.select_budget_record(budget_info=budget_info, user_id=user_id)
         else:
             raise Error(status_code=510,
                         error_code="1000062",
                         message="必要パラメータが未入力です") 
         if not select_result:
-            self.insert_budget_info(budget_info=budget_info)
+            self.insert_budget_info(budget_info=budget_info, user_id=user_id)
         else :
-            self.update_budget_info(budget_info=budget_info)
+            self.update_budget_info(budget_info=budget_info, user_id=user_id)
 
         api_response = {"message": "予算の情報が正常に保存されました。"}
 
@@ -70,11 +71,12 @@ class NewBudgetRegistration(BaseRestApi):
         return super().exception(e)
     
 
-    def select_budget_record(self, budget_info: dict):
+    def select_budget_record(self, budget_info: dict, user_id: str):
         """指定された大分類・小分類の予算レコードを取得する。"""
         params={
             "CAT1":budget_info.get("category1"),
             "CAT2":budget_info.get("category2"),
+            "USER_ID": user_id,
         }
         sql = self.database.read_sql("SELECT_BUDGET_INFO", location=__file__)
         result=self.database.select(sql,params=params)
@@ -82,7 +84,7 @@ class NewBudgetRegistration(BaseRestApi):
         return result 
 
     def insert_budget_info(self, budget_info: Dict[str,
-                                                                      Any]):
+                                                                      Any], user_id: str):
         """未登録の分類に対して予算情報を新規登録する。"""
 
         budget_info_data = {
@@ -95,13 +97,14 @@ class NewBudgetRegistration(BaseRestApi):
             "CRE_TM":datetime.now().strftime("%H%M%S"),
             "UPD_DT":datetime.now().strftime("%Y%m%d"),
             "UPD_TM":datetime.now().strftime("%H%M%S"),
+            "USER_ID": user_id,
             "DEL_FLAG": 0
         }
         sql = self.database.read_sql("INSERT_BUDGET_INFO", location=__file__)
         self.database.insert(sql, params=budget_info_data)
 
     def update_budget_info(self, budget_info: Dict[str,
-                                                                      Any]):
+                                                                      Any], user_id: str):
         """登録済み分類の予算金額を更新する。"""
 
         budget_info_data = {
@@ -111,6 +114,7 @@ class NewBudgetRegistration(BaseRestApi):
             "BUT_AMT": budget_info.get("budgetAmount"),
             "UPD_DT":datetime.now().strftime("%Y%m%d"),
             "UPD_TM":datetime.now().strftime("%H%M%S"),
+            "USER_ID": user_id,
             "DEL_FLAG": 0
         }
         sql = self.database.read_sql("UPDATE_BUDGET_INFO", location=__file__)

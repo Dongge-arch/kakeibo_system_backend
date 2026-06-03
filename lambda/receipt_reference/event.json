@@ -1,0 +1,12 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "receiptId": "receipt-001",
+    "dateFrom": "2026-06-01",
+    "dateTo": "2026-06-30",
+    "category1": "食費"
+  }
+}

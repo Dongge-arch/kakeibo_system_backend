@@ -5,12 +5,7 @@
 
 import os
 import sys
-from abc import ABC
-
-# 直接実行時のモジュール解決エラー対策
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+from abc import ABC, abstractmethod
 
 from src.common.logging import Logging
 

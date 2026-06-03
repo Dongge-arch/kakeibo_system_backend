@@ -1,0 +1,17 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "save_dashboard_layout",
+    "layout": [
+      {
+        "id": "widget1",
+        "position": 1,
+        "width": 6,
+        "height": 4
+      }
+    ]
+  }
+}

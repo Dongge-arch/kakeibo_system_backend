@@ -20,7 +20,9 @@ INSERT INTO receipt_detail (
     CRE_DT,
     CRE_TM,
     UPD_DT,
-    UPD_TM
+    UPD_TM,
+    CRE_USER_ID,
+    UPD_USER_ID
 ) VALUES (
     %(CRE_PROG)s,
     %(UPD_PROG)s,
@@ -40,5 +42,7 @@ INSERT INTO receipt_detail (
     %(CRE_DT)s,
     %(CRE_TM)s,
     %(UPD_DT)s,
-    %(UPD_TM)s
+    %(UPD_TM)s,
+    %(USER_ID)s,
+    %(USER_ID)s
 );

@@ -24,7 +24,7 @@ set "KAKEIBO_DATABASE_INITIALIZE=false"
 set "KAKEIBO_JWT_SECRET=replace-with-a-long-random-secret"
 set "KAKEIBO_API_KEY=replace-with-a-long-random-api-key"
 set "FRONTEND_CORS_ORIGIN=https://your-cloudfront-domain.example.com"
-set "SUPPLIER_LOGO_S3_BUCKET="
+set "SUPPLIER_LOGO_S3_BUCKET=inv-logos"
 
 REM Optional frontend deployment.
 REM If FRONTEND_S3_URI is set, deploy_aws.bat builds frontend-react/dist

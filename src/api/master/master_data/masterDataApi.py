@@ -24,23 +24,24 @@ class MasterDataApi(BaseRestApi):
     def main(self, request_dict):
         """actionに応じて各マスタ処理へ振り分ける。"""
         body = request_dict.get("body") or {}
+        user_id = self.require_user_id(request_dict)
         action = body.get("action")
 
         actions = {
-            "list_category1": self.list_category1,
-            "add_category1": lambda: self.add_category1(body),
-            "delete_category1": lambda: self.delete_category1(body),
-            "list_category2": self.list_category2,
-            "add_category2": lambda: self.add_category2(body),
-            "delete_category2": lambda: self.delete_category2(body),
-            "add_default_categories": lambda: self.add_default_categories(body),
-            "supplier_by_invoice": lambda: self.supplier_by_invoice(body),
-            "list_invoice": self.list_invoice,
-            "delete_invoice": lambda: self.delete_invoice(body),
-            "update_invoice": lambda: self.update_invoice(body),
-            "add_salary_category": lambda: self.add_salary_category(body),
-            "list_salary_category": self.list_salary_category,
-            "delete_salary_category": lambda: self.delete_salary_category(body),
+            "list_category1": lambda: self.list_category1(user_id),
+            "add_category1": lambda: self.add_category1(body, user_id),
+            "delete_category1": lambda: self.delete_category1(body, user_id),
+            "list_category2": lambda: self.list_category2(user_id),
+            "add_category2": lambda: self.add_category2(body, user_id),
+            "delete_category2": lambda: self.delete_category2(body, user_id),
+            "add_default_categories": lambda: self.add_default_categories(body, user_id),
+            "supplier_by_invoice": lambda: self.supplier_by_invoice(body, user_id),
+            "list_invoice": lambda: self.list_invoice(user_id),
+            "delete_invoice": lambda: self.delete_invoice(body, user_id),
+            "update_invoice": lambda: self.update_invoice(body, user_id),
+            "add_salary_category": lambda: self.add_salary_category(body, user_id),
+            "list_salary_category": lambda: self.list_salary_category(user_id),
+            "delete_salary_category": lambda: self.delete_salary_category(body, user_id),
         }
 
         handler = actions.get(action)
@@ -48,39 +49,41 @@ class MasterDataApi(BaseRestApi):
             return json_response(400, {"errorMessage": "unknown master action"})
         return handler()
 
-    def list_category1(self):
+    def list_category1(self, user_id):
         """レシート大分類の有効データを取得する。"""
         rows = self.database.select(
-            "SELECT DISTINCT CATEGORY1_NAME FROM receipt_info_category1 WHERE DEL_FLAG = 0"
+            "SELECT DISTINCT CATEGORY1_NAME FROM receipt_info_category1 WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s",
+            {"USER_ID": user_id},
         )
         return json_response(200, rows)
 
-    def add_category1(self, body):
+    def add_category1(self, body, user_id):
         """レシート大分類を追加する。"""
         name = body.get("category1Name") or body.get("category1_name")
         if not name:
             return {"statusCode": 400, "error": "category1_name is required"}
         self.database.execute(
-            "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (%(CATEGORY1_NAME)s)",
-            {"CATEGORY1_NAME": name},
+            "INSERT INTO receipt_info_category1 (CATEGORY1_NAME, CRE_USER_ID, UPD_USER_ID) VALUES (%(CATEGORY1_NAME)s, %(USER_ID)s, %(USER_ID)s)",
+            {"CATEGORY1_NAME": name, "USER_ID": user_id},
         )
         return {"statusCode": 201, "message": "Category1 added successfully"}
 
-    def delete_category1(self, body):
+    def delete_category1(self, body, user_id):
         """レシート大分類を論理削除する。"""
         name = body.get("category1Name") or body.get("category1_name")
         if not name:
             return {"statusCode": 400, "error": "category1_name is required"}
         self.database.execute(
-            "UPDATE receipt_info_category1 SET DEL_FLAG = 1 WHERE CATEGORY1_NAME = %(CATEGORY1_NAME)s",
-            {"CATEGORY1_NAME": name},
+            "UPDATE receipt_info_category1 SET DEL_FLAG = 1, UPD_USER_ID = %(USER_ID)s WHERE CATEGORY1_NAME = %(CATEGORY1_NAME)s AND CRE_USER_ID = %(USER_ID)s",
+            {"CATEGORY1_NAME": name, "USER_ID": user_id},
         )
         return {"statusCode": 200, "message": "Category1 deleted successfully"}
 
-    def list_category2(self):
+    def list_category2(self, user_id):
         """レシート小分類と税率を取得する。"""
         rows = self.database.select(
-            "SELECT CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE FROM receipt_info_category2 WHERE DEL_FLAG = 0"
+            "SELECT CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE FROM receipt_info_category2 WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s",
+            {"USER_ID": user_id},
         )
         for row in rows:
             try:
@@ -90,7 +93,7 @@ class MasterDataApi(BaseRestApi):
             row["TAX_RATE"] = 0.08 if abs(rate - 0.08) < 0.001 else 0.1
         return json_response(200, rows)
 
-    def add_category2(self, body):
+    def add_category2(self, body, user_id):
         """レシート小分類を大分類・税率と一緒に追加する。"""
         category2_name = body.get("category2Name") or body.get("category2_name")
         category1_name = body.get("category1Name") or body.get("category1_name")
@@ -99,18 +102,19 @@ class MasterDataApi(BaseRestApi):
             return {"statusCode": 400, "error": "category1_name and category2_name are required"}
         self.database.execute(
             """
-            INSERT INTO receipt_info_category2 (CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE)
-            VALUES (%(CATEGORY1_NAME)s, %(CATEGORY2_NAME)s, %(TAX_RATE)s)
+            INSERT INTO receipt_info_category2 (CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE, CRE_USER_ID, UPD_USER_ID)
+            VALUES (%(CATEGORY1_NAME)s, %(CATEGORY2_NAME)s, %(TAX_RATE)s, %(USER_ID)s, %(USER_ID)s)
             """,
             {
                 "CATEGORY1_NAME": category1_name,
                 "CATEGORY2_NAME": category2_name,
                 "TAX_RATE": tax_rate,
+                "USER_ID": user_id,
             },
         )
         return {"statusCode": 201, "message": "Category2 added successfully"}
 
-    def delete_category2(self, body):
+    def delete_category2(self, body, user_id):
         """指定した大分類・小分類の組み合わせを論理削除する。"""
         category2_name = body.get("category2Name") or body.get("category2_name")
         category1_name = body.get("category1Name") or body.get("category1_name")
@@ -121,12 +125,13 @@ class MasterDataApi(BaseRestApi):
             UPDATE receipt_info_category2
             SET DEL_FLAG = 1
             WHERE CATEGORY1_NAME = %(CATEGORY1_NAME)s AND CATEGORY2_NAME = %(CATEGORY2_NAME)s
+              AND CRE_USER_ID = %(USER_ID)s
             """,
-            {"CATEGORY1_NAME": category1_name, "CATEGORY2_NAME": category2_name},
+            {"CATEGORY1_NAME": category1_name, "CATEGORY2_NAME": category2_name, "USER_ID": user_id},
         )
         return {"statusCode": 200, "message": "Category2 deleted successfully"}
 
-    def add_default_categories(self, body):
+    def add_default_categories(self, body, user_id):
         """画面から渡された標準分類を、既存分は重複させずに一括追加する。"""
         category1_items = [self.clean_name(item) for item in body.get("category1", [])]
         category2_items = body.get("category2", [])
@@ -137,15 +142,15 @@ class MasterDataApi(BaseRestApi):
 
         existing_category1 = {
             row.get("CATEGORY1_NAME")
-            for row in self.database.select("SELECT CATEGORY1_NAME FROM receipt_info_category1 WHERE DEL_FLAG = 0")
+            for row in self.database.select("SELECT CATEGORY1_NAME FROM receipt_info_category1 WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s", {"USER_ID": user_id})
         }
         existing_category2 = {
             (row.get("CATEGORY1_NAME"), row.get("CATEGORY2_NAME"))
-            for row in self.database.select("SELECT CATEGORY1_NAME, CATEGORY2_NAME FROM receipt_info_category2 WHERE DEL_FLAG = 0")
+            for row in self.database.select("SELECT CATEGORY1_NAME, CATEGORY2_NAME FROM receipt_info_category2 WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s", {"USER_ID": user_id})
         }
         existing_salary = {
             row.get("SAL_CAT")
-            for row in self.database.select("SELECT SAL_CAT FROM salary_info_category WHERE DEL_FLAG = 0")
+            for row in self.database.select("SELECT SAL_CAT FROM salary_info_category WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s", {"USER_ID": user_id})
         }
 
         added = {"category1": 0, "category2": 0, "salaryCategories": 0}
@@ -153,8 +158,8 @@ class MasterDataApi(BaseRestApi):
             if name in existing_category1:
                 continue
             self.database.execute(
-                "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (%(CATEGORY1_NAME)s)",
-                {"CATEGORY1_NAME": name},
+                "INSERT INTO receipt_info_category1 (CATEGORY1_NAME, CRE_USER_ID, UPD_USER_ID) VALUES (%(CATEGORY1_NAME)s, %(USER_ID)s, %(USER_ID)s)",
+                {"CATEGORY1_NAME": name, "USER_ID": user_id},
             )
             existing_category1.add(name)
             added["category1"] += 1
@@ -169,8 +174,8 @@ class MasterDataApi(BaseRestApi):
                 continue
             if category1_name not in existing_category1:
                 self.database.execute(
-                    "INSERT INTO receipt_info_category1 (CATEGORY1_NAME) VALUES (%(CATEGORY1_NAME)s)",
-                    {"CATEGORY1_NAME": category1_name},
+                    "INSERT INTO receipt_info_category1 (CATEGORY1_NAME, CRE_USER_ID, UPD_USER_ID) VALUES (%(CATEGORY1_NAME)s, %(USER_ID)s, %(USER_ID)s)",
+                    {"CATEGORY1_NAME": category1_name, "USER_ID": user_id},
                 )
                 existing_category1.add(category1_name)
                 added["category1"] += 1
@@ -179,13 +184,14 @@ class MasterDataApi(BaseRestApi):
                 continue
             self.database.execute(
                 """
-                INSERT INTO receipt_info_category2 (CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE)
-                VALUES (%(CATEGORY1_NAME)s, %(CATEGORY2_NAME)s, %(TAX_RATE)s)
+                INSERT INTO receipt_info_category2 (CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE, CRE_USER_ID, UPD_USER_ID)
+                VALUES (%(CATEGORY1_NAME)s, %(CATEGORY2_NAME)s, %(TAX_RATE)s, %(USER_ID)s, %(USER_ID)s)
                 """,
                 {
                     "CATEGORY1_NAME": category1_name,
                     "CATEGORY2_NAME": category2_name,
                     "TAX_RATE": tax_rate,
+                    "USER_ID": user_id,
                 },
             )
             existing_category2.add(key)
@@ -195,8 +201,8 @@ class MasterDataApi(BaseRestApi):
             if name in existing_salary:
                 continue
             self.database.execute(
-                "INSERT INTO salary_info_category (SAL_CAT, DEL_FLAG) VALUES (%(SAL_CAT)s, 0)",
-                {"SAL_CAT": name},
+                "INSERT INTO salary_info_category (SAL_CAT, CRE_USER_ID, UPD_USER_ID, DEL_FLAG) VALUES (%(SAL_CAT)s, %(USER_ID)s, %(USER_ID)s, 0)",
+                {"SAL_CAT": name, "USER_ID": user_id},
             )
             existing_salary.add(name)
             added["salaryCategories"] += 1
@@ -206,7 +212,7 @@ class MasterDataApi(BaseRestApi):
     def clean_name(self, value):
         return "" if value is None else str(value).strip()
 
-    def supplier_by_invoice(self, body):
+    def supplier_by_invoice(self, body, user_id):
         """インボイス登録番号から取引先名、ロゴ、税区分を取得する。"""
         invoice_no = normalize_invoice_number(body.get("invoiceNo"))
         if not invoice_no:
@@ -217,9 +223,9 @@ class MasterDataApi(BaseRestApi):
             """
             SELECT INV_REG_NUM, SUP_NAME AS supplierName, TAX_FLAG AS taxFlag
             FROM invoice_registration
-            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0
+            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND CRE_USER_ID = %(USER_ID)s AND DEL_FLAG = 0
             """,
-            {"INV_REG_NUM": invoice_no},
+            {"INV_REG_NUM": invoice_no, "USER_ID": user_id},
         )
         for row in rows:
             row["supplierLogo"] = self.logo_storage.url_for(row.get("INV_REG_NUM"))
@@ -228,40 +234,42 @@ class MasterDataApi(BaseRestApi):
                 row["taxFlag"] = 1
         return json_response(200, rows)
 
-    def list_invoice(self):
+    def list_invoice(self, user_id):
         """インボイス登録マスタの有効データを取得する。"""
         rows = self.database.select(
             """
             SELECT INV_REG_NUM, SUP_NAME, TAX_FLAG
             FROM invoice_registration
-            WHERE DEL_FLAG = 0
-            """
+            WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s
+            """,
+            {"USER_ID": user_id},
         )
         return json_response(200, [self.invoice_response(row) for row in rows])
 
-    def delete_invoice(self, body):
+    def delete_invoice(self, body, user_id):
         """インボイス登録マスタを論理削除する。"""
         self.database.update(
-            "UPDATE invoice_registration SET DEL_FLAG = 1 WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0",
-            {"INV_REG_NUM": body.get("invoiceRegistrationNumber")},
+            "UPDATE invoice_registration SET DEL_FLAG = 1, UPD_USER_ID = %(USER_ID)s WHERE INV_REG_NUM = %(INV_REG_NUM)s AND CRE_USER_ID = %(USER_ID)s AND DEL_FLAG = 0",
+            {"INV_REG_NUM": body.get("invoiceRegistrationNumber"), "USER_ID": user_id},
         )
         return json_response(200, [])
 
-    def update_invoice(self, body):
+    def update_invoice(self, body, user_id):
         """インボイス登録マスタの取引先名、税区分、画像を更新する。"""
         invoice_number = body.get("invoiceRegistrationNumber")
         params = {
             "SUP_NAME": body.get("supplierName"),
             "TAX_FLAG": normalize_tax_flag(body.get("taxFlag")),
             "INV_REG_NUM": invoice_number,
+            "USER_ID": user_id,
         }
         if body.get("supplierImage") is not None:
             self.logo_storage.upload(invoice_number, body.get("supplierImage"))
         self.database.execute(
             """
             UPDATE invoice_registration
-            SET SUP_NAME = %(SUP_NAME)s, TAX_FLAG = %(TAX_FLAG)s
-            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0
+            SET SUP_NAME = %(SUP_NAME)s, TAX_FLAG = %(TAX_FLAG)s, UPD_USER_ID = %(USER_ID)s
+            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND CRE_USER_ID = %(USER_ID)s AND DEL_FLAG = 0
             """,
             params,
         )
@@ -269,9 +277,9 @@ class MasterDataApi(BaseRestApi):
             """
             SELECT INV_REG_NUM, SUP_NAME, TAX_FLAG
             FROM invoice_registration
-            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND DEL_FLAG = 0
+            WHERE INV_REG_NUM = %(INV_REG_NUM)s AND CRE_USER_ID = %(USER_ID)s AND DEL_FLAG = 0
             """,
-            {"INV_REG_NUM": invoice_number},
+            {"INV_REG_NUM": invoice_number, "USER_ID": user_id},
         )
         return json_response(200, [self.invoice_response(row) for row in rows])
 
@@ -286,26 +294,26 @@ class MasterDataApi(BaseRestApi):
             "taxFlag": normalize_tax_flag(row.get("TAX_FLAG")),
         }
 
-    def add_salary_category(self, body):
+    def add_salary_category(self, body, user_id):
         """入金分類を追加する。"""
         name = body.get("salaryCategoryName") or body.get("salary_category_name")
         if not name:
             return {"statusCode": 400, "error": "salary_category_name is required"}
         self.database.execute(
-            "INSERT INTO salary_info_category (SAL_CAT, DEL_FLAG) VALUES (%(SAL_CAT)s, 0)",
-            {"SAL_CAT": name},
+            "INSERT INTO salary_info_category (SAL_CAT, CRE_USER_ID, UPD_USER_ID, DEL_FLAG) VALUES (%(SAL_CAT)s, %(USER_ID)s, %(USER_ID)s, 0)",
+            {"SAL_CAT": name, "USER_ID": user_id},
         )
         return {"statusCode": 201, "message": "Category2 added successfully"}
 
-    def list_salary_category(self):
+    def list_salary_category(self, user_id):
         """入金分類の有効データを取得する。"""
-        rows = self.database.select("SELECT * FROM salary_info_category WHERE DEL_FLAG = 0")
+        rows = self.database.select("SELECT * FROM salary_info_category WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s", {"USER_ID": user_id})
         return json_response(200, rows)
 
-    def delete_salary_category(self, body):
+    def delete_salary_category(self, body, user_id):
         """入金分類を論理削除する。"""
         rows = self.database.update(
-            "UPDATE salary_info_category SET DEL_FLAG = 1 WHERE DEL_FLAG = 0 AND SAL_CAT = %(SAL_CAT)s",
-            {"SAL_CAT": body.get("salaryCategoryName") or body.get("salary_category_name")},
+            "UPDATE salary_info_category SET DEL_FLAG = 1, UPD_USER_ID = %(USER_ID)s WHERE DEL_FLAG = 0 AND SAL_CAT = %(SAL_CAT)s AND CRE_USER_ID = %(USER_ID)s",
+            {"SAL_CAT": body.get("salaryCategoryName") or body.get("salary_category_name"), "USER_ID": user_id},
         )
         return json_response(200, rows)

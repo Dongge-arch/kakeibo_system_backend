@@ -41,16 +41,17 @@ class ReceiptUpdateDelete(BaseRestApi):
 
 
         body = request_dict.get("body", {})
+        user_id = self.require_user_id(request_dict)
         
         if body.get("updateDeleteType") == "update":
             receipt_id = body.get("receiptInfo").get("receiptId")
-            self.update_receipt_info(receipt_id=receipt_id,body=body)
-            self.update_receipt_details(receipt_id=receipt_id,body=body)
+            self.update_receipt_info(receipt_id=receipt_id,body=body,user_id=user_id)
+            self.update_receipt_details(receipt_id=receipt_id,body=body,user_id=user_id)
             return response(status_code=200,
                             body={"message": "領収書の情報が正常に更新されました。"})
         else:
             receipt_id = body.get("receiptId")
-            self.delete_receipt_info_and_details(receipt_id=receipt_id)
+            self.delete_receipt_info_and_details(receipt_id=receipt_id,user_id=user_id)
             return response(status_code=200,
                             body={"message": "領収書の情報が正常に削除されました。"})
 
@@ -68,7 +69,7 @@ class ReceiptUpdateDelete(BaseRestApi):
             """
         return super().exception(e)
 
-    def select_receipt_info(self, receipt_id: str) -> Dict[str, Any]:
+    def select_receipt_info(self, receipt_id: str, user_id: str) -> Dict[str, Any]:
         """
         領収書の情報を取得
 
@@ -83,12 +84,13 @@ class ReceiptUpdateDelete(BaseRestApi):
                 SELECT RET_ID, INV_REG_NUM, SUP_NAME, RET_DT, RET_TM, RET_DET_CNT, TOA_PRICE
                 FROM receipt_info
                 WHERE RET_ID = %(receipt_id)s
+                AND CRE_USER_ID = %(USER_ID)s
                 """
         
-        result = self.database.select(sql=sql,params={"receipt_id" :receipt_id})
+        result = self.database.select(sql=sql,params={"receipt_id" :receipt_id, "USER_ID": user_id})
         return result if result else []
 
-    def select_receipt_details(self, receipt_id: str) -> list[Dict[str, Any]]:
+    def select_receipt_details(self, receipt_id: str, user_id: str) -> list[Dict[str, Any]]:
 
         """
         領収書の詳細情報を取得
@@ -106,13 +108,14 @@ class ReceiptUpdateDelete(BaseRestApi):
                UT_TAX_EXCLUDED, TO_TAX_EXCLUDED, UT_TAX_INCLUDED, TO_TAX_INCLUDED
         FROM receipt_detail
         WHERE RET_ID = %(receipt_id)s 
+        AND CRE_USER_ID = %(USER_ID)s
         AND DEL_FLAG = 0
         """
 
-        result = self.database.select(sql=sql,params={"receipt_id":receipt_id})
+        result = self.database.select(sql=sql,params={"receipt_id":receipt_id, "USER_ID": user_id})
         return result
 
-    def update_receipt_info(self, receipt_id: str,body: Dict[str, Any]) -> None:
+    def update_receipt_info(self, receipt_id: str,body: Dict[str, Any], user_id: str) -> None:
         """
         領収書の情報を更新する
 
@@ -143,13 +146,14 @@ class ReceiptUpdateDelete(BaseRestApi):
             "TAX_FLAG": receipt_info.get("taxFlag"),
             "RET_DET_CNT": len(receipt_details),
             "TOA_PRICE": receipt_info.get("totalPrice"),
+            "USER_ID": user_id,
         }
 
         sql = self.database.read_sql("UPDATE_RECEIPT_INFO", location=__file__)
         self.database.update(sql, params=receipt_info_data)
-        self.upsert_invoice_registration(receipt_info)
+        self.upsert_invoice_registration(receipt_info, user_id)
 
-    def upsert_invoice_registration(self, receipt_info: Dict[str, Any]) -> None:
+    def upsert_invoice_registration(self, receipt_info: Dict[str, Any], user_id: str) -> None:
         invoice_number = receipt_info.get("invoiceRegistrationNumber")
         if not invoice_number or str(invoice_number).upper().startswith("A"):
             return
@@ -166,6 +170,7 @@ class ReceiptUpdateDelete(BaseRestApi):
             "CRE_TM": now_dt.strftime("%H%M%S"),
             "UPD_DT": now_dt.strftime("%Y%m%d"),
             "UPD_TM": now_dt.strftime("%H%M%S"),
+            "USER_ID": user_id,
             "DEL_FLAG": 0,
         }
 
@@ -175,9 +180,11 @@ class ReceiptUpdateDelete(BaseRestApi):
             UPD_PROG = %(UPD_PROG)s,
             UPD_DT = %(UPD_DT)s,
             UPD_TM = %(UPD_TM)s,
+            UPD_USER_ID = %(USER_ID)s,
             SUP_NAME = COALESCE(%(SUP_NAME)s, SUP_NAME),
             TAX_FLAG = COALESCE(%(TAX_FLAG)s, TAX_FLAG)
         WHERE INV_REG_NUM = %(INV_REG_NUM)s
+          AND CRE_USER_ID = %(USER_ID)s
           AND DEL_FLAG = 0
         """
         updated_count = self.database.update(update_sql, params=params)
@@ -195,6 +202,8 @@ class ReceiptUpdateDelete(BaseRestApi):
             CRE_TM,
             UPD_DT,
             UPD_TM,
+            CRE_USER_ID,
+            UPD_USER_ID,
             DEL_FLAG
         ) VALUES (
             %(CRE_PROG)s,
@@ -206,12 +215,14 @@ class ReceiptUpdateDelete(BaseRestApi):
             %(CRE_TM)s,
             %(UPD_DT)s,
             %(UPD_TM)s,
+            %(USER_ID)s,
+            %(USER_ID)s,
             %(DEL_FLAG)s
         )
         """
         self.database.insert(insert_sql, params=params)
 
-    def update_receipt_details(self,receipt_id: str , body: Dict[str, Any]) -> None:
+    def update_receipt_details(self,receipt_id: str , body: Dict[str, Any], user_id: str) -> None:
         """
         領収書の詳細情報を更新する
 
@@ -224,6 +235,7 @@ class ReceiptUpdateDelete(BaseRestApi):
             "UPD_PROG":"ReceiptUpdateDelete",
             "UPD_DT":datetime.now().strftime("%Y%m%d"),
             "UPD_TM":datetime.now().strftime("%H%M%S"),
+            "USER_ID": user_id,
             "receipt_id" :receipt_id
         }
         self.database.update(sql, params=params)
@@ -256,6 +268,7 @@ class ReceiptUpdateDelete(BaseRestApi):
                 "UT_TAX_INCLUDED": prices.get("taxIncludedUnitPrice"),
                 "TO_TAX_INCLUDED": prices.get("taxIncludedTotalPrice"),
                 "DEL_FLAG":0
+                ,"USER_ID": user_id
             }
             sql = self.database.read_sql("INSERT_RECEIPT_DETAIL",
                                          location=__file__)
@@ -270,7 +283,7 @@ class ReceiptUpdateDelete(BaseRestApi):
         ):
             self.database.execute(sql)
 
-    def delete_receipt_info_and_details(self, receipt_id: str) -> None:
+    def delete_receipt_info_and_details(self, receipt_id: str, user_id: str) -> None:
         """
         領収書の情報と詳細情報を削除する
 
@@ -284,8 +297,10 @@ class ReceiptUpdateDelete(BaseRestApi):
         UPD_PROG = %(UPD_PROG)s,
         UPD_DT = %(UPD_DT)s,
         UPD_TM = %(UPD_TM)s,
+        UPD_USER_ID = %(USER_ID)s,
         del_flag = 1    
         WHERE RET_ID = %(receipt_id)s
+        AND CRE_USER_ID = %(USER_ID)s
         AND del_flag = 0;
         """
 
@@ -293,6 +308,7 @@ class ReceiptUpdateDelete(BaseRestApi):
             "UPD_PROG":"ReceiptUpdateDelete",
             "UPD_DT":datetime.now().strftime("%Y%m%d"),
             "UPD_TM":datetime.now().strftime("%H%M%S"),
+            "USER_ID": user_id,
             "receipt_id" :receipt_id
         }
         self.database.update(sql, params=params)
@@ -302,8 +318,10 @@ class ReceiptUpdateDelete(BaseRestApi):
                 SET del_flag = 1,
                 UPD_PROG = %(UPD_PROG)s,
                 UPD_DT = %(UPD_DT)s,
-                UPD_TM = %(UPD_TM)s
+                UPD_TM = %(UPD_TM)s,
+                UPD_USER_ID = %(USER_ID)s
                 WHERE RET_ID = %(receipt_id)s
+                AND CRE_USER_ID = %(USER_ID)s
                 AND del_flag = 0;
                 """
         self.database.update(sql, params=params)

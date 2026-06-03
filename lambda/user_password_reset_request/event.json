@@ -1,0 +1,9 @@
+{
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "request_password_reset",
+    "email": "user@example.com"
+  }
+}

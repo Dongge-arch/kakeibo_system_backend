@@ -20,18 +20,19 @@ class IncomeApi(BaseRestApi):
     def main(self, request_dict):
         """actionに応じて入金系の処理へ振り分ける。"""
         body = request_dict.get("body") or {}
+        user_id = self.require_user_id(request_dict)
         action = body.get("action")
         if action == "create":
-            return self.create_income(body.get("salaryInfo") if isinstance(body.get("salaryInfo"), dict) else body)
+            return self.create_income(body.get("salaryInfo") if isinstance(body.get("salaryInfo"), dict) else body, user_id)
         if action == "list":
-            return self.list_income(body)
+            return self.list_income(body, user_id)
         if action == "update":
-            return self.update_income(body)
+            return self.update_income(body, user_id)
         if action == "delete":
-            return self.delete_income(body)
+            return self.delete_income(body, user_id)
         return json_response(400, {"errorMessage": "unknown income action"})
 
-    def create_income(self, body):
+    def create_income(self, body, user_id):
         """画面入力を既存DB形式へ変換して入金情報を登録する。"""
         salary_time = body.get("salaryTime") or ""
         salary_date = body.get("salaryDate")
@@ -45,11 +46,11 @@ class IncomeApi(BaseRestApi):
             """
             INSERT INTO salary_info (
                 CRE_PROG, UPD_PROG, SAL_DATE, SAL_NAME, SAL_CAT, SAL_SUB_CAT,
-                SAL_COMMENT, SAL_AMT, CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
+                SAL_COMMENT, SAL_AMT, CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
             )
             VALUES (
                 %(CRE_PROG)s, %(UPD_PROG)s, %(SAL_DATE)s, %(SAL_NAME)s, %(SAL_CAT)s, %(SAL_SUB_CAT)s,
-                %(SAL_COMMENT)s, %(SAL_AMT)s, %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(DEL_FLAG)s
+                %(SAL_COMMENT)s, %(SAL_AMT)s, %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, %(DEL_FLAG)s
             )
             """,
             {
@@ -65,15 +66,16 @@ class IncomeApi(BaseRestApi):
                 "CRE_TM": hms,
                 "UPD_DT": ymd,
                 "UPD_TM": hms,
+                "USER_ID": user_id,
                 "DEL_FLAG": 0,
             },
         )
         return {"statusCode": 201, "message": "入金項目は正しく登録しました。"}
 
-    def list_income(self, body):
+    def list_income(self, body, user_id):
         """月指定または日付範囲指定で入金情報を取得する。"""
-        sql = "SELECT * FROM salary_info WHERE DEL_FLAG = 0"
-        params = {}
+        sql = "SELECT * FROM salary_info WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s"
+        params = {"USER_ID": user_id}
         if body.get("month"):
             sql += " AND SAL_DATE LIKE %(SAL_DATE_PREFIX)s"
             params["SAL_DATE_PREFIX"] = f"{body['month'].replace('-', '')}%"
@@ -97,7 +99,7 @@ class IncomeApi(BaseRestApi):
             })
         return json_response(200, response)
 
-    def update_income(self, body):
+    def update_income(self, body, user_id):
         """指定IDの入金情報を更新する。"""
         income_id = body.get("id")
         if not income_id:
@@ -116,8 +118,9 @@ class IncomeApi(BaseRestApi):
                 SAL_AMT = %(SAL_AMT)s,
                 UPD_DT = %(UPD_DT)s,
                 UPD_TM = %(UPD_TM)s,
+                UPD_USER_ID = %(USER_ID)s,
                 DEL_FLAG = 0
-            WHERE id = %(id)s AND DEL_FLAG = 0
+            WHERE id = %(id)s AND CRE_USER_ID = %(USER_ID)s AND DEL_FLAG = 0
             """,
             {
                 "SAL_DATE": salary_date,
@@ -126,12 +129,13 @@ class IncomeApi(BaseRestApi):
                 "SAL_AMT": body.get("salaryAmount"),
                 "UPD_DT": ymd,
                 "UPD_TM": hms,
+                "USER_ID": user_id,
                 "id": income_id,
             },
         )
         return {"statusCode": 200, "message": "ok"}
 
-    def delete_income(self, body):
+    def delete_income(self, body, user_id):
         """指定IDの入金情報を論理削除する。"""
         income_id = body.get("id")
         if not income_id:
@@ -140,9 +144,9 @@ class IncomeApi(BaseRestApi):
         self.database.execute(
             """
             UPDATE salary_info
-            SET DEL_FLAG = 1, UPD_DT = %(UPD_DT)s, UPD_TM = %(UPD_TM)s
-            WHERE id = %(id)s AND DEL_FLAG = 0
+            SET DEL_FLAG = 1, UPD_DT = %(UPD_DT)s, UPD_TM = %(UPD_TM)s, UPD_USER_ID = %(USER_ID)s
+            WHERE id = %(id)s AND CRE_USER_ID = %(USER_ID)s AND DEL_FLAG = 0
             """,
-            {"UPD_DT": ymd, "UPD_TM": hms, "id": income_id},
+            {"UPD_DT": ymd, "UPD_TM": hms, "USER_ID": user_id, "id": income_id},
         )
         return {"statusCode": 200, "message": "ok"}

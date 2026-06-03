@@ -14,6 +14,7 @@ def create_database(db_path: Optional[str] = None):
     _ = db_path
     database_config = APP_CONFIG.get("database", {}) or {}
     cloud_config = database_config.get("cloud", {}) or {}
+    
     database_url = os.environ.get("KAKEIBO_DATABASE_URL") or cloud_config.get("url") or ""
     if not database_url:
         raise ValueError("KAKEIBO_DATABASE_URL is required for PostgreSQL.")

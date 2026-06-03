@@ -9,3 +9,7 @@ WHERE
 CAT1 = %(CAT1)s 
 AND 
 CAT2 = %(CAT2)s
+AND
+CRE_USER_ID = %(USER_ID)s
+AND
+DEL_FLAG = 0

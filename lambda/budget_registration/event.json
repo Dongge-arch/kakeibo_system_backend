@@ -1,0 +1,13 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "budget_info": {
+      "category1": "食費",
+      "category2": "飲料",
+      "budgetAmount": 5000
+    }
+  }
+}

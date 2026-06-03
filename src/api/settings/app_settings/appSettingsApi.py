@@ -41,22 +41,23 @@ class AppSettingsApi(BaseRestApi):
     def main(self, request_dict):
         """actionに応じて設定取得・保存処理へ振り分ける。"""
         body = request_dict.get("body") or {}
+        user_id = self.require_user_id(request_dict)
         action = body.get("action")
 
         if action == "get":
-            return json_response(200, self.get_settings())
+            return json_response(200, self.get_settings(user_id))
         if action == "save":
-            self.save_settings(body.get("settings") or {})
+            self.save_settings(body.get("settings") or {}, user_id)
             return json_response(200, {"ok": True})
         if action == "get_dashboard_layout":
-            return json_response(200, self.get_dashboard_layout())
+            return json_response(200, self.get_dashboard_layout(user_id))
         if action == "save_dashboard_layout":
-            self.save_dashboard_layout(body.get("layout") or [])
+            self.save_dashboard_layout(body.get("layout") or [], user_id)
             return json_response(200, {"ok": True})
 
         return json_response(400, {"errorMessage": "unknown settings action"})
 
-    def get_settings(self):
+    def get_settings(self, user_id):
         """最新のアプリ設定を画面用の項目名で取得する。"""
         rows = self.database.select(
             """
@@ -70,9 +71,11 @@ class AppSettingsApi(BaseRestApi):
               SUNSET as sunset
             FROM setting_table
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
             ORDER BY id DESC
             LIMIT 1
-            """
+            """,
+            {"USER_ID": user_id},
         )
         row = rows[0] if rows else {}
         extra = parse_json_object(row_value(row, "BUT_CAT", "but_cat"))
@@ -87,10 +90,10 @@ class AppSettingsApi(BaseRestApi):
             "colorTheme": extra.get("colorTheme", "kakeibo"),
             "language": extra.get("language", "ja"),
         }
-        settings["aiUsageSummary"] = self.get_ai_usage_summary()
+        settings["aiUsageSummary"] = self.get_ai_usage_summary(user_id)
         return settings
 
-    def get_ai_usage_summary(self):
+    def get_ai_usage_summary(self, user_id):
         """設定画面向けにAI利用量の合計を返す。"""
         try:
             ymd, _ = now_ymd_hms()
@@ -106,8 +109,10 @@ class AppSettingsApi(BaseRestApi):
                   COALESCE(SUM(THOUGHTS_TOKENS), 0) AS thoughtsTokens
                 FROM ai_usage_log
                 WHERE DEL_FLAG = 0
+                  AND CRE_USER_ID = %(USER_ID)s
                   AND FEATURE = 'receipt_ai'
-                """
+                """,
+                {"USER_ID": user_id},
             )
             today_rows = self.database.select(
                 """
@@ -120,10 +125,11 @@ class AppSettingsApi(BaseRestApi):
                   COALESCE(SUM(THOUGHTS_TOKENS), 0) AS thoughtsTokens
                 FROM ai_usage_log
                 WHERE DEL_FLAG = 0
+                  AND CRE_USER_ID = %(USER_ID)s
                   AND FEATURE = 'receipt_ai'
                   AND CRE_DT = %(CRE_DT)s
                 """,
-                {"CRE_DT": ymd},
+                {"CRE_DT": ymd, "USER_ID": user_id},
             )
             month_rows = self.database.select(
                 """
@@ -136,10 +142,11 @@ class AppSettingsApi(BaseRestApi):
                   COALESCE(SUM(THOUGHTS_TOKENS), 0) AS thoughtsTokens
                 FROM ai_usage_log
                 WHERE DEL_FLAG = 0
+                  AND CRE_USER_ID = %(USER_ID)s
                   AND FEATURE = 'receipt_ai'
                   AND CRE_DT LIKE %(CRE_MONTH)s
                 """,
-                {"CRE_MONTH": f"{month_prefix}%"},
+                {"CRE_MONTH": f"{month_prefix}%", "USER_ID": user_id},
             )
             return {
                 "total": self.format_usage_row(rows[0] if rows else {}),
@@ -163,15 +170,17 @@ class AppSettingsApi(BaseRestApi):
             "thoughtsTokens": int_value(row_value(row, "thoughtsTokens", "thoughtstokens", default=0)),
         }
 
-    def save_settings(self, body):
+    def save_settings(self, body, user_id):
         """アプリ設定を履歴型で新規行として保存する。"""
         rows = self.database.select(
             """
             SELECT BUT_CAT FROM setting_table
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
             ORDER BY id DESC
             LIMIT 1
-            """
+            """,
+            {"USER_ID": user_id},
         )
         extra = parse_json_object(row_value(rows[0], "BUT_CAT", "but_cat")) if rows else {}
         extra.update({
@@ -186,12 +195,12 @@ class AppSettingsApi(BaseRestApi):
               CRE_PROG, UPD_PROG,
               BUT_ON_OFF, BUT_CAT, BUDGET_PERIOD,
               DAY_DARK, AUTO_DAY_DARK, SUNRISE, SUNSET,
-              CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
+              CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
             ) VALUES (
               %(CRE_PROG)s, %(UPD_PROG)s,
               %(BUT_ON_OFF)s, %(BUT_CAT)s, %(BUDGET_PERIOD)s,
               %(DAY_DARK)s, %(AUTO_DAY_DARK)s, %(SUNRISE)s, %(SUNSET)s,
-              %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(DEL_FLAG)s
+              %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, %(DEL_FLAG)s
             )
             """,
             {
@@ -208,32 +217,37 @@ class AppSettingsApi(BaseRestApi):
                 "CRE_TM": hms,
                 "UPD_DT": ymd,
                 "UPD_TM": hms,
+                "USER_ID": user_id,
                 "DEL_FLAG": 0,
             },
         )
 
-    def get_dashboard_layout(self):
+    def get_dashboard_layout(self, user_id):
         """設定JSONに保存されたダッシュボード配置を取得する。"""
         rows = self.database.select(
             """
             SELECT BUT_CAT FROM setting_table
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
             ORDER BY id DESC
             LIMIT 1
-            """
+            """,
+            {"USER_ID": user_id},
         )
         extra = parse_json_object(row_value(rows[0], "BUT_CAT", "but_cat")) if rows else {}
         return extra.get("dashboardLayout")
 
-    def save_dashboard_layout(self, layout):
+    def save_dashboard_layout(self, layout, user_id):
         """既存設定を引き継ぎながらダッシュボード配置だけを保存する。"""
         rows = self.database.select(
             """
             SELECT * FROM setting_table
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
             ORDER BY id DESC
             LIMIT 1
-            """
+            """,
+            {"USER_ID": user_id},
         )
         last = rows[0] if rows else {}
         extra = parse_json_object(row_value(last, "BUT_CAT", "but_cat"))
@@ -244,11 +258,11 @@ class AppSettingsApi(BaseRestApi):
             INSERT INTO setting_table (
               CRE_PROG, UPD_PROG, BUT_ON_OFF, BUT_CAT, BUDGET_PERIOD,
               DAY_DARK, AUTO_DAY_DARK, SUNRISE, SUNSET,
-              CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
+              CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
             ) VALUES (
               %(CRE_PROG)s, %(UPD_PROG)s, %(BUT_ON_OFF)s, %(BUT_CAT)s, %(BUDGET_PERIOD)s,
               %(DAY_DARK)s, %(AUTO_DAY_DARK)s, %(SUNRISE)s, %(SUNSET)s,
-              %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, 0
+              %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, 0
             )
             """,
             {
@@ -265,5 +279,6 @@ class AppSettingsApi(BaseRestApi):
                 "CRE_TM": hms,
                 "UPD_DT": ymd,
                 "UPD_TM": hms,
+                "USER_ID": user_id,
             },
         )

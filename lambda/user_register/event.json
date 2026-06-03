@@ -1,0 +1,11 @@
+{
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "register",
+    "email": "newuser@example.com",
+    "password": "password123",
+    "nickname": "新規ユーザー"
+  }
+}

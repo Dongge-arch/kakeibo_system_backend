@@ -39,20 +39,21 @@ class AiReceiptApi(BaseRestApi):
     def main(self, request_dict):
         """actionに応じてAI解析・履歴・利用量処理へ振り分ける。"""
         body = request_dict.get("body") or {}
+        user_id = self.require_user_id(request_dict)
         action = body.get("action")
         if action == "analyze":
-            return self.analyze(body)
+            return self.analyze(body, user_id)
         if action == "list_history":
-            return json_response(200, self.list_history())
+            return json_response(200, self.list_history(user_id))
         if action == "get_history":
-            return json_response(200, self.get_history(body.get("analysisId")))
+            return json_response(200, self.get_history(body.get("analysisId"), user_id))
         if action == "save_final_receipt":
-            return self.save_final_receipt(body)
+            return self.save_final_receipt(body, user_id)
         if action == "usage":
-            return json_response(200, self.usage_summary())
+            return json_response(200, self.usage_summary(user_id))
         return json_response(400, {"errorMessage": "unknown ai receipt action"})
 
-    def analyze(self, body):
+    def analyze(self, body, user_id):
         """画像とカテゴリ情報をAI解析クラスへ渡し、結果を履歴へ保存する。"""
         image_base64 = body.get("imageBase64") or ""
         if "," in image_base64 and image_base64.startswith("data:"):
@@ -66,28 +67,29 @@ class AiReceiptApi(BaseRestApi):
             "imageMimeType": body.get("imageMimeType") or "image/jpeg",
             "receiptText": receipt_text,
             "inputType": "text" if receipt_text and not image_base64 else "image",
-            "categories": self.merge_categories(body.get("categories")),
+            "categories": self.merge_categories(body.get("categories"), user_id),
         }
 
         try:
             parsed = self.analyzer.analyze_payload(payload)
             status_code = parsed.get("statusCode", 200) if isinstance(parsed, dict) else 200
-            self.record_usage(parsed, status_code)
+            self.record_usage(parsed, status_code, user_id)
             response_body = service_body(parsed)
             if isinstance(response_body, dict):
                 analysis_id = self.create_history(
+                    user_id=user_id,
                     image_base64=image_base64,
                     image_mime_type=payload["imageMimeType"],
                     ai_output=response_body,
                 )
                 response_body["analysisId"] = analysis_id
-                response_body["usageSummary"] = self.usage_summary()
+                response_body["usageSummary"] = self.usage_summary(user_id)
             return json_response(status_code, response_body)
 
         except Exception as e:
             return json_response(500, {"errorMessage": str(e)})
 
-    def create_history(self, image_base64, image_mime_type, ai_output):
+    def create_history(self, user_id, image_base64, image_mime_type, ai_output):
         """AI解析結果と送信画像を ai_receipt_analysis に保存する。"""
         self.ensure_ai_schema()
         analysis_id = uuid.uuid4().hex
@@ -98,11 +100,11 @@ class AiReceiptApi(BaseRestApi):
             INSERT INTO ai_receipt_analysis (
               CRE_PROG, UPD_PROG, ANALYSIS_ID, INV_REG_NUM, SUP_NAME, RET_DT, RET_TM,
               TAX_FLAG, TOA_PRICE, AI_IMAGE_MIME_TYPE, AI_OUTPUT_JSON,
-              EDITED_RECEIPT_JSON, STATUS, CRE_DT, CRE_TM, UPD_DT, UPD_TM, DEL_FLAG
+              EDITED_RECEIPT_JSON, STATUS, CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
             ) VALUES (
               %(CRE_PROG)s, %(UPD_PROG)s, %(ANALYSIS_ID)s, %(INV_REG_NUM)s, %(SUP_NAME)s, %(RET_DT)s, %(RET_TM)s,
               %(TAX_FLAG)s, %(TOA_PRICE)s, %(AI_IMAGE_MIME_TYPE)s, %(AI_OUTPUT_JSON)s,
-              %(EDITED_RECEIPT_JSON)s, %(STATUS)s, %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, 0
+              %(EDITED_RECEIPT_JSON)s, %(STATUS)s, %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, 0
             )
             """,
             {
@@ -123,11 +125,12 @@ class AiReceiptApi(BaseRestApi):
                 "CRE_TM": hms,
                 "UPD_DT": ymd,
                 "UPD_TM": hms,
+                "USER_ID": user_id,
             },
         )
         return analysis_id
 
-    def save_final_receipt(self, body):
+    def save_final_receipt(self, body, user_id):
         """手動編集後に実際保存されたレシート内容をAI解析履歴へ反映する。"""
         self.ensure_ai_schema()
         analysis_id = body.get("analysisId")
@@ -141,9 +144,11 @@ class AiReceiptApi(BaseRestApi):
                 """
                 SELECT RET_ID FROM receipt_info
                 WHERE DEL_FLAG = 0
+                  AND CRE_USER_ID = %(USER_ID)s
                 ORDER BY id DESC
                 LIMIT 1
-                """
+                """,
+                {"USER_ID": user_id},
             )
             receipt_id = rows[0].get("RET_ID") if rows else ""
         ymd, hms = now_ymd_hms()
@@ -161,8 +166,10 @@ class AiReceiptApi(BaseRestApi):
                 EDITED_RECEIPT_JSON = %(EDITED_RECEIPT_JSON)s,
                 STATUS = %(STATUS)s,
                 UPD_DT = %(UPD_DT)s,
-                UPD_TM = %(UPD_TM)s
+                UPD_TM = %(UPD_TM)s,
+                UPD_USER_ID = %(USER_ID)s
             WHERE ANALYSIS_ID = %(ANALYSIS_ID)s
+              AND CRE_USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             """,
             {
@@ -178,12 +185,13 @@ class AiReceiptApi(BaseRestApi):
                 "STATUS": "saved",
                 "UPD_DT": ymd,
                 "UPD_TM": hms,
+                "USER_ID": user_id,
                 "ANALYSIS_ID": analysis_id,
             },
         )
         return json_response(200, {"ok": updated > 0, "receiptId": receipt_id})
 
-    def list_history(self):
+    def list_history(self, user_id):
         """AI解析履歴を新しい順に最大200件取得する。"""
         self.ensure_ai_schema()
         rows = self.database.select(
@@ -200,9 +208,11 @@ class AiReceiptApi(BaseRestApi):
               CRE_TM as createdTime
             FROM ai_receipt_analysis
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
             ORDER BY id DESC
             LIMIT 200
-            """
+            """,
+            {"USER_ID": user_id},
         )
         return [
             {
@@ -219,7 +229,7 @@ class AiReceiptApi(BaseRestApi):
             for row in rows
         ]
 
-    def get_history(self, analysis_id):
+    def get_history(self, analysis_id, user_id):
         """指定したAI解析履歴の画像、AI出力、編集後内容を取得する。"""
         self.ensure_ai_schema()
         if not analysis_id:
@@ -244,10 +254,11 @@ class AiReceiptApi(BaseRestApi):
               CRE_TM as createdTime
             FROM ai_receipt_analysis
             WHERE ANALYSIS_ID = %(ANALYSIS_ID)s
+              AND CRE_USER_ID = %(USER_ID)s
               AND DEL_FLAG = 0
             LIMIT 1
             """,
-            {"ANALYSIS_ID": analysis_id},
+            {"ANALYSIS_ID": analysis_id, "USER_ID": user_id},
         )
         if not rows:
             return None
@@ -355,9 +366,9 @@ class AiReceiptApi(BaseRestApi):
         for statement in statements:
             self.database.execute(statement)
 
-    def merge_categories(self, raw_categories):
+    def merge_categories(self, raw_categories, user_id):
         """画面指定カテゴリが不足する場合はDBのマスタカテゴリで補完する。"""
-        db_categories = self.load_categories()
+        db_categories = self.load_categories(user_id)
         if not isinstance(raw_categories, dict):
             return db_categories
 
@@ -368,14 +379,16 @@ class AiReceiptApi(BaseRestApi):
             "category2": category2 if isinstance(category2, list) and category2 else db_categories["category2"],
         }
 
-    def load_categories(self):
+    def load_categories(self, user_id):
         """AIへ渡す大分類・小分類マスタをDBから取得する。"""
         return {
             "category1": self.database.select(
-                "SELECT DISTINCT CATEGORY1_NAME FROM receipt_info_category1 WHERE DEL_FLAG = 0"
+                "SELECT DISTINCT CATEGORY1_NAME FROM receipt_info_category1 WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s",
+                {"USER_ID": user_id},
             ) or [],
             "category2": self.database.select(
-                "SELECT CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE FROM receipt_info_category2 WHERE DEL_FLAG = 0"
+                "SELECT CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE FROM receipt_info_category2 WHERE DEL_FLAG = 0 AND CRE_USER_ID = %(USER_ID)s",
+                {"USER_ID": user_id},
             ) or [],
         }
 
@@ -389,7 +402,7 @@ class AiReceiptApi(BaseRestApi):
             usage = body.get("usage")
         return usage if isinstance(usage, dict) else {}
 
-    def record_usage(self, service_payload, status_code):
+    def record_usage(self, service_payload, status_code, user_id):
         """AIサービス呼び出し結果の利用量を ai_usage_log に記録する。"""
         self.ensure_ai_schema()
         usage = self.extract_usage(service_payload)
@@ -401,11 +414,11 @@ class AiReceiptApi(BaseRestApi):
             INSERT INTO ai_usage_log (
               CRE_PROG, PROVIDER, MODEL, FEATURE, STATUS_CODE, ERROR_CODE,
               PROMPT_TOKENS, OUTPUT_TOKENS, TOTAL_TOKENS, CACHED_TOKENS, THOUGHTS_TOKENS,
-              CRE_DT, CRE_TM, DEL_FLAG
+              CRE_DT, CRE_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
             ) VALUES (
               %(CRE_PROG)s, %(PROVIDER)s, %(MODEL)s, %(FEATURE)s, %(STATUS_CODE)s, %(ERROR_CODE)s,
               %(PROMPT_TOKENS)s, %(OUTPUT_TOKENS)s, %(TOTAL_TOKENS)s, %(CACHED_TOKENS)s, %(THOUGHTS_TOKENS)s,
-              %(CRE_DT)s, %(CRE_TM)s, 0
+              %(CRE_DT)s, %(CRE_TM)s, %(USER_ID)s, %(USER_ID)s, 0
             )
             """,
             {
@@ -422,10 +435,11 @@ class AiReceiptApi(BaseRestApi):
                 "THOUGHTS_TOKENS": int_token(usage.get("thoughtsTokens")),
                 "CRE_DT": ymd,
                 "CRE_TM": hms,
+                "USER_ID": user_id,
             },
         )
 
-    def usage_summary(self):
+    def usage_summary(self, user_id):
         """レシートAI機能の累計利用量を集計する。"""
         self.ensure_ai_schema()
         rows = self.database.select(
@@ -439,8 +453,10 @@ class AiReceiptApi(BaseRestApi):
               COALESCE(SUM(THOUGHTS_TOKENS), 0) as thoughtsTokens
             FROM ai_usage_log
             WHERE DEL_FLAG = 0
+              AND CRE_USER_ID = %(USER_ID)s
               AND FEATURE = 'receipt_ai'
-            """
+            """,
+            {"USER_ID": user_id},
         )
         row = rows[0] if rows else {}
         return {

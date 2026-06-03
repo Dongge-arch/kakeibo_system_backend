@@ -65,6 +65,7 @@ class NewReceiptRegistration(BaseRestApi):
             Dict[str, Any]: 標準化されたAPIレスポンス。
         """
         body = request_dict.get("body", {})
+        user_id = self.require_user_id(request_dict)
         receipt_info = body.get("receiptInfo", {})
         if not body:
             raise Error(status_code=510,
@@ -79,20 +80,22 @@ class NewReceiptRegistration(BaseRestApi):
                     status_code=510,
                     error_code="1000062",
                     message="receiptDetailCountとreceiptDetailsの数が一致しません。")
-        receipt_id = self.create_receipt_id(receipt_info=receipt_info)
-        invoice_number = self.normalize_or_create_receipt_number(receipt_info.get("invoiceRegistrationNumber"))
+        receipt_id = self.create_receipt_id(receipt_info=receipt_info, user_id=user_id)
+        invoice_number = self.normalize_or_create_receipt_number(receipt_info.get("invoiceRegistrationNumber", ""), user_id)
         receipt_info["invoiceRegistrationNumber"] = invoice_number
         self.logo_storage.upload(invoice_number, receipt_info.get("supplierImage"))
         select_response = self.select_invoice_registration(
-            inv_reg_num=invoice_number)
+            inv_reg_num=invoice_number, user_id=user_id)
         if not select_response:
-            self.insert_invoice_registration(body=receipt_info)
+            self.insert_invoice_registration(body=receipt_info, user_id=user_id)
 
         self.insert_receipt_info(receipt_id=receipt_id,
-                                 receipt_info=receipt_info)
+                                 receipt_info=receipt_info,
+                                 user_id=user_id)
         self.insert_receipt_details(receipt_id=receipt_id,
                                     receipt_details=receipt_details,
-                                    tax_flag=receipt_info.get("taxFlag"))
+                                    tax_flag=receipt_info.get("taxFlag"),
+                                    user_id=user_id)
 
         api_response = {
             "message": "領収書の情報が正常に登録されました。",
@@ -113,8 +116,7 @@ class NewReceiptRegistration(BaseRestApi):
             """
         return super().exception(e)
 
-    def insert_receipt_info(self, receipt_id: str, receipt_info: Dict[str,
-                                                                      Any]):
+    def insert_receipt_info(self, receipt_id: str, receipt_info: Dict[str, Any], user_id: str):
         """
             領収書の情報をデータベースに挿入する。
 
@@ -145,11 +147,12 @@ class NewReceiptRegistration(BaseRestApi):
             "CRE_TM":datetime.now().strftime("%H%M%S"),
             "UPD_DT":datetime.now().strftime("%Y%m%d"),
             "UPD_TM":datetime.now().strftime("%H%M%S"),
+            "USER_ID": user_id,
         }
         sql = self.database.read_sql("INSERT_RECEIPT_INFO", location=__file__)
         self.database.insert(sql, params=receipt_info_data)
 
-    def insert_receipt_details(self, receipt_id: str, receipt_details: list, tax_flag=None):
+    def insert_receipt_details(self, receipt_id: str, receipt_details: list, tax_flag=None, user_id: str = ""):
         """
             領収書の詳細情報をデータベースに挿入する。
 
@@ -157,7 +160,6 @@ class NewReceiptRegistration(BaseRestApi):
                 receipt_id(str): 領収書のID。
                 receipt_details(list): 領収書の詳細情報を含む辞書のリスト。
         """
-        self.ensure_receipt_detail_tax_columns()
         for detail in receipt_details:
             prices = enrich_detail_prices(detail, tax_flag)
             receipt_detail_data = {
@@ -180,26 +182,21 @@ class NewReceiptRegistration(BaseRestApi):
                 "CRE_TM":datetime.now().strftime("%H%M%S"),
                 "UPD_DT":datetime.now().strftime("%Y%m%d"),
                 "UPD_TM":datetime.now().strftime("%H%M%S"),
+                "USER_ID": user_id,
             }
             sql = self.database.read_sql("INSERT_RECEIPT_DETAIL",
                                          location=__file__)
             self.database.insert(sql, params=receipt_detail_data)
 
-    def ensure_receipt_detail_tax_columns(self) -> None:
-        for sql in (
-            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS UT_TAX_EXCLUDED DOUBLE PRECISION",
-            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS TO_TAX_EXCLUDED DOUBLE PRECISION",
-            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS UT_TAX_INCLUDED DOUBLE PRECISION",
-            "ALTER TABLE receipt_detail ADD COLUMN IF NOT EXISTS TO_TAX_INCLUDED DOUBLE PRECISION",
-        ):
-            self.database.execute(sql)
 
-    def create_receipt_id(self, receipt_info: Dict[str, Any]) -> str:
+
+    def create_receipt_id(self, receipt_info: Dict[str, Any], user_id: str) -> str:
         """
             領収書のIDを生成する。
 
             Args:
                 receipt_info(Dict[str, Any]): 領収書の情報を含む辞書。
+                user_id(str): ユーザーID。
 
             Returns:
                 str: 生成された領収書のID。
@@ -213,7 +210,7 @@ class NewReceiptRegistration(BaseRestApi):
         sql = self.database.read_sql("SELECT_MAX_RECEIPT_ID",
                                      location=__file__)
         response = (self.database.select(
-            sql, params={"receipt_id_date": f"{receipt_id_prefix}%"}))
+            sql, params={"receipt_id_date": f"{receipt_id_prefix}%", "USER_ID": user_id}))
         if response:
             max_receipt_id = response[0].get("receipt_id") if response else None
         if max_receipt_id:
@@ -237,12 +234,13 @@ class NewReceiptRegistration(BaseRestApi):
         cleaned = "".join(char.lower() for char in user_id if char.isalnum())
         return (cleaned or "anon")[:8]
 
-    def insert_invoice_registration(self, body: Dict[str, Any]) -> None:
+    def insert_invoice_registration(self, body: Dict[str, Any], user_id: str) -> None:
         """
         登録者情報をデータベースに挿入するメソッド
 
         Args:
             body (Dict[str, Any]): 登録者情報を含む辞書
+            user_id (str): ユーザーID
         """
         invoice_number = body.get("invoiceRegistrationNumber")
         if not invoice_number or str(invoice_number).upper().startswith("A"):
@@ -258,6 +256,7 @@ class NewReceiptRegistration(BaseRestApi):
             "CRE_TM":datetime.now().strftime("%H%M%S"),
             "UPD_DT":datetime.now().strftime("%Y%m%d"),
             "UPD_TM":datetime.now().strftime("%H%M%S"),
+            "USER_ID": user_id,
             "DEL_FLAG": 0
         }
 
@@ -274,12 +273,13 @@ class NewReceiptRegistration(BaseRestApi):
                 raise e
 
             
-    def select_invoice_registration(self, inv_reg_num: str) -> Dict[str, Any]:
+    def select_invoice_registration(self, inv_reg_num: str , user_id: str) -> Dict[str, Any]:
         """
             インボイス登録番号に一致する取引先マスタを取得する。
 
             Args:
                 inv_reg_num(str): 検索対象のインボイス登録番号。
+                user_id(str): ユーザーID。
 
             Returns:
                 Dict[str, Any]: 取引先マスタ。存在しない場合はNone。
@@ -287,10 +287,10 @@ class NewReceiptRegistration(BaseRestApi):
         if not inv_reg_num or str(inv_reg_num).upper().startswith("A"):
             return None
         sql = self.database.read_sql("SELECT_INV_REG_NUM", location=__file__)
-        result = self.database.select(sql, params={"INV_REG_NUM": inv_reg_num})
+        result = self.database.select(sql, params={"INV_REG_NUM": inv_reg_num, "USER_ID": user_id})
         return result[0] if result else None
 
-    def normalize_or_create_receipt_number(self, value: str) -> str:
+    def normalize_or_create_receipt_number(self, value: str, user_id: str) -> str:
         """空欄なら A + 13桁のシステム番号を重複しない形で発行する。"""
         raw = str(value or "").strip().upper()
         if raw.startswith("A") and len(raw) == 14 and raw[1:].isdigit():
@@ -308,9 +308,10 @@ class NewReceiptRegistration(BaseRestApi):
                 FROM receipt_info
                 WHERE INV_REG_NUM = %(INV_REG_NUM)s
                   AND DEL_FLAG = 0
+                  AND CRE_USER_ID = %(USER_ID)s
                 LIMIT 1
                 """,
-                {"INV_REG_NUM": candidate},
+                {"INV_REG_NUM": candidate, "USER_ID": user_id},
             )
             if not rows:
                 return candidate

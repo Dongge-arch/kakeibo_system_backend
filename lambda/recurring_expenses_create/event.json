@@ -1,0 +1,17 @@
+{
+  "headers": {
+    "x-kakeibo-user-id": "user-12345",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "action": "create",
+    "ruleName": "毎月の水道代",
+    "dayOfMonth": 10,
+    "itemName": "水道代",
+    "category1": "公共料金",
+    "category2": "水道",
+    "amount": 5000,
+    "taxFlag": 0,
+    "memo": "自動登録"
+  }
+}
