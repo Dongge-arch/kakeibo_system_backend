@@ -10,8 +10,8 @@ import re
 import time
 
 import requests
-
-from src.api.receipt.taxPrice import enrich_detail_prices
+from src.common.config import APP_CONFIG
+from src.api.receipt.taxPrice import enrich_detail_prices, normalize_tax_rate
 
 
 log = logging.getLogger(__name__)
@@ -271,6 +271,94 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 """
 
 
+def build_receipt_category_mapping_prompt(categories: dict) -> str:
+    """抽出済みレシート明細を家計簿カテゴリへ寄せるプロンプトを作る。"""
+    category_text = build_category_prompt(categories)
+
+    return f"""抽出済みレシートJSONを、家計簿登録用のカテゴリへ分類し直してください。
+説明文、Markdown、コードブロックは禁止です。JSONだけを返してください。
+
+分類は必ず下の分類一覧から選んでください。自由入力は禁止です。
+receiptDetails の各明細は category1/category2/taxRate を必ず入れてください。空文字は禁止です。
+category1 には「■」の分類名、category2 にはその下の項目名を入れてください。
+迷う場合も「未分類」にせず、商品名から最も近い分類を選んでください。
+
+【分類一覧】
+{category_text}
+
+【変換ルール】
+- 入力JSONの receiptInfo 構造を保ったまま返してください。
+- 商品名、数量、単価、値引、明細金額、合計金額、日付、時刻、店舗名、登録番号は変更しないでください。
+- 変更してよい項目は receiptDetails の category1/category2/taxRate だけです。
+- 入力明細に belcCategoryCode / belcCategoryName がある場合、それはベルク側の商品分類です。分類判断の参考にしてください。
+- belcCategoryCode / belcCategoryName を category1/category2 にそのまま入れることは禁止です。最終分類は必ず分類一覧から選んでください。
+- taxRate は分類一覧に taxRate がある場合はそれを優先してください。
+- 入力に軽減税率由来の taxRate=0.08 がある食品は、分類一覧と矛盾しない範囲で 0.08 を維持してください。
+- レジ袋や日用品は食品分類に入れないでください。
+- ポイント、支払方法、税額行、合計行が明細に混ざっている場合は receiptDetails から除外してください。
+- receiptDetailCount は返却する receiptDetails の件数に合わせてください。
+
+【出力形式】
+{{
+  "receiptInfo": {{
+    "invoiceRegistrationNumber": "",
+    "supplierName": "",
+    "receiptDate": "",
+    "receiptTime": "",
+    "taxFlag": "0",
+    "totalPrice": 0,
+    "receiptDetails": [
+      {{
+        "itemName": "",
+        "category1": "",
+        "category2": "",
+        "taxRate": 0.1,
+        "quantity": 1,
+        "unitPrice": 0,
+        "discount": 0,
+        "totalPrice": 0
+      }}
+    ]
+  }}
+}}
+"""
+
+
+def build_category_pair_mapping_prompt(categories: dict) -> str:
+    """外部サービス側カテゴリを家計簿カテゴリへ対応付けるプロンプトを作る。"""
+    category_text = build_category_prompt(categories)
+
+    return f"""外部サービス側の商品カテゴリを、家計簿カテゴリへ対応付けてください。
+説明文、Markdown、コードブロックは禁止です。JSONだけを返してください。
+
+家計簿カテゴリは必ず下の分類一覧から選んでください。自由入力は禁止です。
+category1 には「■」の分類名、category2 にはその下の項目名を入れてください。
+
+【家計簿分類一覧】
+{category_text}
+
+【対応付けルール】
+- 入力の belcCategoryCode / belcCategoryName はベルク側の商品分類です。
+- ベルク側分類をそのまま category1/category2 に入れることは禁止です。
+- それぞれのベルク側分類に最も近い家計簿分類を1つだけ選んでください。
+- taxRate は選んだ家計簿分類の taxRate を優先してください。
+- 判断に迷う場合も、分類一覧の中から最も近いものを選んでください。
+
+【出力形式】
+{{
+  "mappings": [
+    {{
+      "belcCategoryCode": "",
+      "belcCategoryName": "",
+      "category1": "",
+      "category2": "",
+      "taxRate": 0.1
+    }}
+  ]
+}}
+"""
+
+
 class GeminiReceiptAnalyzer:
     """Gemini REST API を使ってレシート画像またはレシート本文を解析する。"""
 
@@ -278,7 +366,7 @@ class GeminiReceiptAnalyzer:
     api_retry_delay_seconds = 1
 
     def __init__(self, api_key: str | None = None, model: str | None = None, timeout: int = 40):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or ""
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or APP_CONFIG.get("ai_receipt", {}).get("api_key", "")
         self.model = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash-lite"
         self.timeout = timeout
 
@@ -377,10 +465,14 @@ class GeminiReceiptAnalyzer:
 
     def call_gemini_with_receipt_text(self, receipt_text: str, prompt: str) -> tuple[str, dict]:
         """OCR済みのレシート本文とプロンプトを Gemini REST API に渡す。"""
+        return self.call_gemini_with_text(receipt_text, prompt, label="レシート本文")
+
+    def call_gemini_with_text(self, text: str, prompt: str, label: str = "入力データ") -> tuple[str, dict]:
+        """任意のテキストとプロンプトを Gemini REST API に渡す共通入口。"""
         text_prompt = (
             f"{prompt}\n\n"
-            "【レシート本文】\n"
-            f"{receipt_text}\n"
+            f"【{label}】\n"
+            f"{text}\n"
         )
         return self.generate_content([{"text": text_prompt}])
 
@@ -419,7 +511,7 @@ class GeminiReceiptAnalyzer:
             if valid_pairs and (category1, category2) not in valid_pairs and tax_rates:
                 category1, category2 = next(iter(tax_rates.keys()))
 
-            tax_rate = (
+            tax_rate = normalize_tax_rate(
                 item.get("taxRate")
                 if item.get("taxRate") is not None
                 else item.get("tax_rate")
@@ -509,6 +601,45 @@ class GeminiReceiptAnalyzer:
             "body": self.normalize_ai_receipt(json.loads(raw_text), categories),
         }, usage)
 
+    def analyze_text_with_prompt(self, text: str, prompt: str, categories=None, label: str = "入力データ") -> dict:
+        """用途別プロンプトでテキストを解析し、receiptInfo形式へ正規化する。"""
+        try:
+            if not str(text or "").strip():
+                return {
+                    "statusCode": 400,
+                    "body": {"errorMessage": "解析対象テキストを入力してください。"},
+                }
+            ai_text, usage = self.call_gemini_with_text(str(text), prompt, label=label)
+            return self.parse_gemini_receipt_text(ai_text, usage, categories)
+        except Exception as e:
+            log.exception("Receipt AI text analyze failed.")
+            return {
+                "statusCode": 400,
+                "body": {"errorMessage": str(e)},
+            }
+
+    def analyze_json_with_prompt(self, text: str, prompt: str, label: str = "入力データ") -> dict:
+        """用途別プロンプトでJSON応答を受け取る共通入口。"""
+        try:
+            if not str(text or "").strip():
+                return {
+                    "statusCode": 400,
+                    "body": {"errorMessage": "解析対象テキストを入力してください。"},
+                }
+            ai_text, usage = self.call_gemini_with_text(str(text), prompt, label=label)
+            raw_text = clean_json_text(ai_text)
+            log.info("Gemini raw json text cleaned: %s", raw_text[:1000])
+            return self.attach_usage({
+                "statusCode": 200,
+                "body": json.loads(raw_text),
+            }, usage)
+        except Exception as e:
+            log.exception("Receipt AI json analyze failed.")
+            return {
+                "statusCode": 400,
+                "body": {"errorMessage": str(e)},
+            }
+
     def analyze_payload(self, request: dict) -> dict:
         """HTTP でも Lambda 直接呼び出しでも使う、実際の解析処理。"""
         try:
@@ -526,7 +657,7 @@ class GeminiReceiptAnalyzer:
                     "body": {"errorMessage": "画像またはレシート本文を入力してください。"},
                 }
 
-            prompt = build_receipt_prompt(categories)
+            prompt = (request or {}).get("prompt") or build_receipt_prompt(categories)
             if image_base64:
                 image_bytes = base64.b64decode(image_base64)
                 log.info(

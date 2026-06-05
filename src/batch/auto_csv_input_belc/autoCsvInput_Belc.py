@@ -5,6 +5,7 @@
 
 """ベルク店舗HPにてCSVファイルをダウンロードし、レシート情報を自動登録するバッチクラス。"""
 
+import json
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -15,11 +16,26 @@ from src.common.base.base_batch import BaseBatch
 from src.common.functions.response import response
 from src.common.auth_context import reset_current_user_id, set_current_user_id
 from src.api.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
+from src.api.receipt.ai_receipt.receiptAnalyzer import (
+    GeminiReceiptAnalyzer,
+    build_category_pair_mapping_prompt,
+    clean_category_label,
+)
+from src.api.receipt.taxPrice import normalize_tax_rate
 
 
 BELC_INVOICE_NUMBER = "T8030001085963"
 BELC_SUPPLIER_NAME = "ベルク"
 AUTO_INPUT_STATUS_REGISTERED = "3"
+BELC_CATEGORY_NAMES = {
+    "01": "青果",
+    "04": "精肉",
+    "06": "パン",
+    "07": "一般食品",
+    "12": "卵・乳製品",
+    "24": "ハム・ソーセージ",
+    "25": "日配・チルド食品",
+}
 
 
 class AutoCsvInput_Belc(BaseBatch):
@@ -172,6 +188,8 @@ class AutoCsvInput_Belc(BaseBatch):
 
         # Process each selected receipt and register it
         registration_api = NewReceiptRegistration()
+        ai_analyzer = GeminiReceiptAnalyzer(timeout=40)
+        categories = self.load_receipt_categories(user_id)
         registered_count = 0
         for checkbox_info in selected_checkboxes:
             try:
@@ -187,6 +205,11 @@ class AutoCsvInput_Belc(BaseBatch):
                         "Belc receipt detail items were not found; skipped receipt registration "
                         f"for receiptNo={receipt_info.get('receiptNo')}, date={receipt_info.get('receiptDate')}."
                     )
+                receipt_info = self.map_receipt_categories(
+                    receipt_info=receipt_info,
+                    categories=categories,
+                    analyzer=ai_analyzer,
+                )
                 auth_token = set_current_user_id(user_id)
                 try:
                     result = registration_api.call(
@@ -544,6 +567,271 @@ class AutoCsvInput_Belc(BaseBatch):
             f"auto_csv_input_cont registered: inserted={inserted}, inv={params['INV_REG_NUM']}, ret_dt={receipt_date}, ret_tm={receipt_time}"
         )
 
+    def load_receipt_categories(self, user_id: str) -> dict:
+        """
+        AI分類に渡す家計簿側のカテゴリマスタを取得する。
+        """
+        return {
+            "category1": self.database.select(
+                """
+                SELECT DISTINCT CATEGORY1_NAME
+                FROM kakeibo.receipt_info_category1
+                WHERE DEL_FLAG = 0
+                  AND CRE_USER_ID = %(USER_ID)s
+                """,
+                {"USER_ID": user_id},
+            ) or [],
+            "category2": self.database.select(
+                """
+                SELECT CATEGORY1_NAME, CATEGORY2_NAME, TAX_RATE
+                FROM kakeibo.receipt_info_category2
+                WHERE DEL_FLAG = 0
+                  AND CRE_USER_ID = %(USER_ID)s
+                """,
+                {"USER_ID": user_id},
+            ) or [],
+        }
+
+    def map_receipt_categories(self, receipt_info: dict, categories: dict, analyzer: GeminiReceiptAnalyzer) -> dict:
+        """
+        Belc側カテゴリを家計簿カテゴリへ変換し、商品明細へ反映する。
+        """
+        if not (categories.get("category2") if isinstance(categories, dict) else None):
+            raise RuntimeError("receipt category master is empty; skipped AI category mapping.")
+
+        # 先にローカルでカテゴリ名同士を照合し、AIへ渡すカテゴリ数を減らす。
+        category_map = self.build_local_belc_category_map(receipt_info, categories)
+        unresolved_categories = self.find_unresolved_belc_categories(receipt_info, category_map)
+        if unresolved_categories:
+            category_map.update(self.map_unresolved_belc_categories_with_ai(
+                belc_categories=unresolved_categories,
+                categories=categories,
+                analyzer=analyzer,
+            ))
+
+        return self.apply_belc_category_map(receipt_info, category_map)
+
+    def build_local_belc_category_map(self, receipt_info: dict, categories: dict) -> dict:
+        """
+        Belcカテゴリ名と家計簿カテゴリ名をローカルで照合する。
+        """
+        category_map = {}
+        for belc_category in self.extract_unique_belc_categories(receipt_info):
+            matched = self.find_local_category_match(belc_category, categories)
+            if matched:
+                category_map[self.belc_category_key(belc_category)] = matched
+        return category_map
+
+    def map_unresolved_belc_categories_with_ai(self, belc_categories: list[dict], categories: dict, analyzer: GeminiReceiptAnalyzer) -> dict:
+        """
+        ローカル照合できなかったBelcカテゴリだけをAIへ渡して対応表を作る。
+        """
+        prompt = build_category_pair_mapping_prompt(categories)
+        input_categories = [
+            {
+                "belcCategoryCode": item.get("code") or "",
+                "belcCategoryName": item.get("name") or "",
+            }
+            for item in belc_categories
+        ]
+        input_text = json.dumps({"belcCategories": input_categories}, ensure_ascii=False)
+        parsed = analyzer.analyze_json_with_prompt(
+            text=input_text,
+            prompt=prompt,
+            label="Belcカテゴリ一覧",
+        )
+        status_code = int(parsed.get("statusCode", 500)) if isinstance(parsed, dict) else 500
+        if status_code >= 400:
+            raise RuntimeError(f"AI category mapping failed: {parsed}")
+
+        mapped_body = parsed.get("body") if isinstance(parsed, dict) else {}
+        mappings = mapped_body.get("mappings") if isinstance(mapped_body, dict) else None
+        if not isinstance(mappings, list) or not mappings:
+            raise RuntimeError(f"AI category mapping returned no mappings: {parsed}")
+
+        result = {}
+        valid_pairs = self.category_pair_map(categories)
+        for mapping in mappings:
+            if not isinstance(mapping, dict):
+                continue
+            belc_category = {
+                "code": str(mapping.get("belcCategoryCode") or ""),
+                "name": str(mapping.get("belcCategoryName") or ""),
+            }
+            category1 = clean_category_label(mapping.get("category1"))
+            category2 = clean_category_label(mapping.get("category2"))
+            pair_key = (category1, category2)
+            if pair_key not in valid_pairs:
+                raise RuntimeError(f"AI category mapping returned unknown category: {mapping}")
+            result[self.belc_category_key(belc_category)] = {
+                "category1": category1,
+                "category2": category2,
+                "taxRate": normalize_tax_rate(mapping.get("taxRate") or valid_pairs[pair_key].get("taxRate")),
+            }
+        return result
+
+    def apply_belc_category_map(self, receipt_info: dict, category_map: dict) -> dict:
+        """
+        Belcカテゴリ対応表を各商品明細へ適用する。
+        """
+        result = dict(receipt_info)
+        details = []
+        for detail in receipt_info.get("receiptDetails") or []:
+            next_detail = dict(detail)
+            belc_category = {
+                "code": str(next_detail.get("belcCategoryCode") or ""),
+                "name": str(next_detail.get("belcCategoryName") or ""),
+            }
+            mapped = category_map.get(self.belc_category_key(belc_category))
+            if not mapped:
+                raise RuntimeError(f"Belc category mapping not found: {belc_category}")
+            next_detail["category1"] = mapped.get("category1")
+            next_detail["category2"] = mapped.get("category2")
+            next_detail["taxRate"] = mapped.get("taxRate")
+            details.append(next_detail)
+
+        result["receiptDetails"] = details
+        result["receiptDetailCount"] = len(details)
+        return result
+
+    def extract_unique_belc_categories(self, receipt_info: dict) -> list[dict]:
+        """
+        レシート明細に含まれるBelcカテゴリを重複なしで取り出す。
+        """
+        result = []
+        seen = set()
+        for detail in receipt_info.get("receiptDetails") or []:
+            belc_category = {
+                "code": str(detail.get("belcCategoryCode") or ""),
+                "name": str(detail.get("belcCategoryName") or ""),
+            }
+            key = self.belc_category_key(belc_category)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(belc_category)
+        return result
+
+    def find_unresolved_belc_categories(self, receipt_info: dict, category_map: dict) -> list[dict]:
+        """
+        ローカル照合で解決できなかったBelcカテゴリだけを抽出する。
+        """
+        return [
+            belc_category
+            for belc_category in self.extract_unique_belc_categories(receipt_info)
+            if self.belc_category_key(belc_category) not in category_map
+        ]
+
+    def find_local_category_match(self, belc_category: dict, categories: dict) -> dict | None:
+        """
+        Belcカテゴリ名と家計簿カテゴリ名を、完全一致・部分一致の順に照合する。
+        """
+        belc_name = belc_category.get("name") or ""
+        if not belc_name:
+            return None
+
+        category_rows = self.category_rows(categories)
+        belc_key = self.normalize_category_match_text(belc_name)
+        exact_matches = []
+        partial_matches = []
+        for row in category_rows:
+            category1_key = self.normalize_category_match_text(row.get("category1"))
+            category2_key = self.normalize_category_match_text(row.get("category2"))
+            if belc_key and belc_key == category2_key:
+                exact_matches.append(row)
+            elif belc_key and belc_key == category1_key:
+                exact_matches.append(row)
+            elif belc_key and (belc_key in category2_key or category2_key in belc_key):
+                partial_matches.append(row)
+            elif belc_key and (belc_key in category1_key or category1_key in belc_key):
+                partial_matches.append(row)
+
+        matched = exact_matches[0] if exact_matches else partial_matches[0] if partial_matches else None
+        if not matched:
+            return None
+        return {
+            "category1": matched.get("category1"),
+            "category2": matched.get("category2"),
+            "taxRate": normalize_tax_rate(matched.get("taxRate")),
+        }
+
+    def category_rows(self, categories: dict) -> list[dict]:
+        """
+        DB行の大文字キーを扱いやすい形式へ正規化する。
+        """
+        rows = []
+        for item in categories.get("category2") or []:
+            if not isinstance(item, dict):
+                continue
+            category1 = clean_category_label(item.get("CATEGORY1_NAME") or item.get("category1Name"))
+            category2 = clean_category_label(item.get("CATEGORY2_NAME") or item.get("category2Name"))
+            if not category1 or not category2:
+                continue
+            rows.append({
+                "category1": category1,
+                "category2": category2,
+                "taxRate": item.get("TAX_RATE") if item.get("TAX_RATE") is not None else item.get("taxRate"),
+            })
+        return rows
+
+    def category_pair_map(self, categories: dict) -> dict:
+        """
+        AI結果検証用に、存在する家計簿カテゴリのペアを作る。
+        """
+        return {
+            (row.get("category1"), row.get("category2")): row
+            for row in self.category_rows(categories)
+        }
+
+    def belc_category_key(self, belc_category: dict) -> str:
+        """
+        Belcカテゴリコードと名称から対応表用キーを作る。
+        """
+        return f"{belc_category.get('code') or ''}:{belc_category.get('name') or ''}"
+
+    def normalize_category_match_text(self, value) -> str:
+        """
+        カテゴリ名照合用に空白・記号を取り除く。
+        """
+        return re.sub(r"[\s\u3000・･/／\-ー_]+", "", str(value or "").lower())
+
+    def merge_ai_mapped_receipt_info(self, original: dict, mapped: dict) -> dict:
+        """
+        AI分類結果を反映しつつ、Belcから確定取得したヘッダ・金額情報を保持する。
+        """
+        result = dict(original)
+        mapped_details = mapped.get("receiptDetails") or []
+        original_details = original.get("receiptDetails") or []
+
+        details = []
+        for idx, mapped_detail in enumerate(mapped_details):
+            base_detail = dict(original_details[idx]) if idx < len(original_details) and isinstance(original_details[idx], dict) else {}
+            base_detail.update({
+                "category1": mapped_detail.get("category1") or base_detail.get("category1"),
+                "category2": mapped_detail.get("category2") or base_detail.get("category2"),
+                "taxRate": mapped_detail.get("taxRate") if mapped_detail.get("taxRate") is not None else base_detail.get("taxRate"),
+            })
+            details.append(base_detail)
+
+        result["receiptDetails"] = details
+        result["receiptDetailCount"] = len(details)
+        for key in (
+            "userId",
+            "invoiceRegistrationNumber",
+            "supplierName",
+            "storeName",
+            "storeCode",
+            "posNo",
+            "receiptNo",
+            "receiptDate",
+            "receiptTime",
+            "taxFlag",
+            "totalPrice",
+            "supplierImage",
+        ):
+            result[key] = original.get(key)
+        return result
+
     def normalize_auto_input_date(self, value) -> str:
         """
         YYYY-MM-DD / YYYYMMDD を auto_csv_input_cont 用の YYYYMMDD にそろえる。
@@ -696,6 +984,7 @@ class AutoCsvInput_Belc(BaseBatch):
                 continue
 
             raw_name = name_elem.get_text(" ", strip=True)
+            belc_category = self.extract_belc_category(raw_name)
             item_name = self.clean_belc_item_name(raw_name)
             if not item_name:
                 continue
@@ -719,9 +1008,25 @@ class AutoCsvInput_Belc(BaseBatch):
                     total_price=total_price,
                 ),
                 "discount": discount,
-                "taxRate": 8 if "*" in raw_name else 10,
+                "taxRate": 0.08 if "*" in raw_name else 0.1,
+                "belcCategoryCode": belc_category.get("code"),
+                "belcCategoryName": belc_category.get("name"),
             })
         return receipt_details
+
+    def extract_belc_category(self, value: str) -> dict:
+        """
+        Belcの商品名先頭に付く部門コードをAI分類用の参考情報として抽出する。
+        """
+        text = self.clean_cell_text(value).replace("*", "").strip()
+        match = re.match(r"^(\d{2})\s+", text)
+        if not match:
+            return {"code": "", "name": ""}
+        code = match.group(1)
+        return {
+            "code": code,
+            "name": BELC_CATEGORY_NAMES.get(code, ""),
+        }
 
     def clean_belc_item_name(self, value: str) -> str:
         """

@@ -68,6 +68,7 @@ class AiReceiptApi(BaseRestApi):
             "receiptText": receipt_text,
             "inputType": "text" if receipt_text and not image_base64 else "image",
             "categories": self.merge_categories(body.get("categories"), user_id),
+            "prompt": body.get("prompt"),
         }
 
         try:
