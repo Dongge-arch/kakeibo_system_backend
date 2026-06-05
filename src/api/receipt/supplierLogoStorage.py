@@ -124,11 +124,15 @@ class SupplierLogoStorage:
                 return ""
             if self._is_access_denied_error(e):
                 log.warning(
-                    "Could not verify supplier logo object with head_object; returning presigned URL for key %s.",
+                    "Skipped supplier logo because S3 object could not be accessed for key %s.",
                     key,
                 )
-                return self._presigned_url(self._client(), key)
-            log.exception("Failed to build supplier logo URL from S3.")
+                return ""
+            log.warning(
+                "Skipped supplier logo because S3 URL could not be built for key %s: %s",
+                key,
+                e,
+            )
             return ""
 
     def _is_not_found_error(self, error: Exception) -> bool:

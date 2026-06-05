@@ -1,0 +1,10 @@
+SELECT 
+*
+FROM
+auto_csv_input_info
+WHERE
+INV_REG_NUM = %(INV_REG_NUM)s
+AND
+CRE_USER_ID = %(CRE_USER_ID)s
+AND
+DEL_FLAG = 0

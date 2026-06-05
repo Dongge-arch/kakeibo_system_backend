@@ -289,7 +289,6 @@ class MasterDataApi(BaseRestApi):
         return {
             "invoiceRegistrationNumber": row.get("INV_REG_NUM"),
             "supplierImage": supplier_logo,
-            "supplierLogo": supplier_logo,
             "supplierName": row.get("SUP_NAME"),
             "taxFlag": normalize_tax_flag(row.get("TAX_FLAG")),
         }
