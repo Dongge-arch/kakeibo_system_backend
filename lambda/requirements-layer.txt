@@ -1,0 +1,7 @@
+fastapi
+PyYAML
+tzdata
+openpyxl
+psycopg[binary]
+mangum
+requests

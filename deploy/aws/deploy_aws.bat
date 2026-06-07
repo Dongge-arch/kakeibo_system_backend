@@ -127,7 +127,7 @@ echo [1/8] Installing Lambda layer packages...
 "%KAKEIBO_PYTHON%" -m pip install --upgrade pip
 if errorlevel 1 exit /b 1
 
-"%KAKEIBO_PYTHON%" -m pip install -r "%ROOT_DIR%lambda\requirements-layer.txt" -t "%LAYER_DIR%\python" --platform "%LAYER_PLATFORM%" --implementation cp --python-version "%PYTHON_VERSION%" --only-binary=:all: --upgrade
+"%KAKEIBO_PYTHON%" -m pip install -r "%ROOT_DIR%lambda_api\requirements-layer.txt" -t "%LAYER_DIR%\python" --platform "%LAYER_PLATFORM%" --implementation cp --python-version "%PYTHON_VERSION%" --only-binary=:all: --upgrade
 if errorlevel 1 exit /b 1
 
 echo [2/9] Staging application code into Lambda layer...
@@ -155,7 +155,9 @@ if not defined HOME_KAKEIBO_LAYER_ARN (
 echo [INFO] Layer ARN: %HOME_KAKEIBO_LAYER_ARN%
 
 echo [6/9] Staging Lambda handler source only...
-call :copy_tree "%ROOT_DIR%lambda" "%FUNCTION_DIR%\lambda"
+call :copy_tree "%ROOT_DIR%lambda_api" "%FUNCTION_DIR%\lambda_api"
+if errorlevel 1 exit /b 1
+call :copy_tree "%ROOT_DIR%lambda_batch" "%FUNCTION_DIR%\lambda_batch"
 if errorlevel 1 exit /b 1
 
 echo [7/9] Creating Lambda handler zip...

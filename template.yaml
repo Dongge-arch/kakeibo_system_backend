@@ -85,7 +85,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-receipt-registration
-      Handler: lambda.receipt_registration.lambda_function.lambda_handler
+      Handler: lambda_api.receipt_registration.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -108,7 +108,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-receipt-reference
-      Handler: lambda.receipt_reference.lambda_function.lambda_handler
+      Handler: lambda_api.receipt_reference.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -131,7 +131,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-receipt-update-delete
-      Handler: lambda.receipt_update_delete.lambda_function.lambda_handler
+      Handler: lambda_api.receipt_update_delete.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -154,7 +154,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-budget-registration
-      Handler: lambda.budget_registration.lambda_function.lambda_handler
+      Handler: lambda_api.budget_registration.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -177,7 +177,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-budget-reference
-      Handler: lambda.budget_reference.lambda_function.lambda_handler
+      Handler: lambda_api.budget_reference.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -200,7 +200,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-budget-list
-      Handler: lambda.budget_list.lambda_function.lambda_handler
+      Handler: lambda_api.budget_list.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -223,7 +223,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-budget-upsert
-      Handler: lambda.budget_upsert.lambda_function.lambda_handler
+      Handler: lambda_api.budget_upsert.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -246,7 +246,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-app-settings-get
-      Handler: lambda.app_settings_get.lambda_function.lambda_handler
+      Handler: lambda_api.app_settings_get.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -269,7 +269,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-app-settings-save
-      Handler: lambda.app_settings_save.lambda_function.lambda_handler
+      Handler: lambda_api.app_settings_save.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -292,7 +292,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-dashboard-layout-get
-      Handler: lambda.dashboard_layout_get.lambda_function.lambda_handler
+      Handler: lambda_api.dashboard_layout_get.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -315,7 +315,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-dashboard-layout-save
-      Handler: lambda.dashboard_layout_save.lambda_function.lambda_handler
+      Handler: lambda_api.dashboard_layout_save.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -338,7 +338,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-user-register
-      Handler: lambda.user_register.lambda_function.lambda_handler
+      Handler: lambda_api.user_register.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -361,7 +361,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-user-login
-      Handler: lambda.user_login.lambda_function.lambda_handler
+      Handler: lambda_api.user_login.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -384,7 +384,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-user-password-reset-request
-      Handler: lambda.user_password_reset_request.lambda_function.lambda_handler
+      Handler: lambda_api.user_password_reset_request.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -407,7 +407,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-user-password-reset-confirm
-      Handler: lambda.user_password_reset_confirm.lambda_function.lambda_handler
+      Handler: lambda_api.user_password_reset_confirm.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -430,7 +430,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-user-logout
-      Handler: lambda.user_logout.lambda_function.lambda_handler
+      Handler: lambda_api.user_logout.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -453,7 +453,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-user-me
-      Handler: lambda.user_me.lambda_function.lambda_handler
+      Handler: lambda_api.user_me.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -476,7 +476,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-user-profile
-      Handler: lambda.user_profile.lambda_function.lambda_handler
+      Handler: lambda_api.user_profile.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -499,7 +499,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-recurring-expenses-list
-      Handler: lambda.recurring_expenses_list.lambda_function.lambda_handler
+      Handler: lambda_api.recurring_expenses_list.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -522,7 +522,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-recurring-expenses-create
-      Handler: lambda.recurring_expenses_create.lambda_function.lambda_handler
+      Handler: lambda_api.recurring_expenses_create.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -545,7 +545,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-recurring-expenses-update
-      Handler: lambda.recurring_expenses_update.lambda_function.lambda_handler
+      Handler: lambda_api.recurring_expenses_update.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -568,7 +568,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-recurring-expenses-delete
-      Handler: lambda.recurring_expenses_delete.lambda_function.lambda_handler
+      Handler: lambda_api.recurring_expenses_delete.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -591,7 +591,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-recurring-expenses-run-due
-      Handler: lambda.recurring_expenses_run_due.lambda_function.lambda_handler
+      Handler: lambda_api.recurring_expenses_run_due.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -614,7 +614,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-ai-receipt-analyze
-      Handler: lambda.ai_receipt_analyze.lambda_function.lambda_handler
+      Handler: lambda_api.ai_receipt_analyze.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -637,7 +637,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-ai-receipt-usage
-      Handler: lambda.ai_receipt_usage.lambda_function.lambda_handler
+      Handler: lambda_api.ai_receipt_usage.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -660,7 +660,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-ai-receipt-history
-      Handler: lambda.ai_receipt_history.lambda_function.lambda_handler
+      Handler: lambda_api.ai_receipt_history.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -683,7 +683,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-ai-receipt-history-detail
-      Handler: lambda.ai_receipt_history_detail.lambda_function.lambda_handler
+      Handler: lambda_api.ai_receipt_history_detail.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -706,7 +706,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-ai-receipt-history-final
-      Handler: lambda.ai_receipt_history_final.lambda_function.lambda_handler
+      Handler: lambda_api.ai_receipt_history_final.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -729,7 +729,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-category1-list
-      Handler: lambda.category1_list.lambda_function.lambda_handler
+      Handler: lambda_api.category1_list.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -752,7 +752,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-category1-add
-      Handler: lambda.category1_add.lambda_function.lambda_handler
+      Handler: lambda_api.category1_add.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -775,7 +775,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-category1-delete
-      Handler: lambda.category1_delete.lambda_function.lambda_handler
+      Handler: lambda_api.category1_delete.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -798,7 +798,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-category2-list
-      Handler: lambda.category2_list.lambda_function.lambda_handler
+      Handler: lambda_api.category2_list.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -821,7 +821,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-category2-add
-      Handler: lambda.category2_add.lambda_function.lambda_handler
+      Handler: lambda_api.category2_add.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -844,7 +844,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-category2-delete
-      Handler: lambda.category2_delete.lambda_function.lambda_handler
+      Handler: lambda_api.category2_delete.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -867,7 +867,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-default-categories-add
-      Handler: lambda.default_categories_add.lambda_function.lambda_handler
+      Handler: lambda_api.default_categories_add.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -890,7 +890,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-supplier-by-invoice
-      Handler: lambda.supplier_by_invoice.lambda_function.lambda_handler
+      Handler: lambda_api.supplier_by_invoice.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -913,7 +913,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-salary-category-add
-      Handler: lambda.salary_category_add.lambda_function.lambda_handler
+      Handler: lambda_api.salary_category_add.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -936,7 +936,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-salary-category-list
-      Handler: lambda.salary_category_list.lambda_function.lambda_handler
+      Handler: lambda_api.salary_category_list.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -959,7 +959,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-salary-category-delete
-      Handler: lambda.salary_category_delete.lambda_function.lambda_handler
+      Handler: lambda_api.salary_category_delete.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -982,7 +982,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-invoice-list
-      Handler: lambda.invoice_list.lambda_function.lambda_handler
+      Handler: lambda_api.invoice_list.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -1005,7 +1005,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-invoice-delete
-      Handler: lambda.invoice_delete.lambda_function.lambda_handler
+      Handler: lambda_api.invoice_delete.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -1028,7 +1028,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-invoice-update
-      Handler: lambda.invoice_update.lambda_function.lambda_handler
+      Handler: lambda_api.invoice_update.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -1051,7 +1051,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-income-create
-      Handler: lambda.income_create.lambda_function.lambda_handler
+      Handler: lambda_api.income_create.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -1074,7 +1074,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-income-list
-      Handler: lambda.income_list.lambda_function.lambda_handler
+      Handler: lambda_api.income_list.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -1097,7 +1097,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-income-update
-      Handler: lambda.income_update.lambda_function.lambda_handler
+      Handler: lambda_api.income_update.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -1120,7 +1120,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: home-kakeibo-income-delete
-      Handler: lambda.income_delete.lambda_function.lambda_handler
+      Handler: lambda_api.income_delete.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
       Policies:
         - !If
@@ -1139,6 +1139,67 @@ Resources:
           Properties:
             Path: /receipt/deleteincome
             Method: PUT
+
+  AutoLinkageListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-auto-linkage-list
+      Handler: lambda_api.auto_linkage_list.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages
+            Method: GET
+  AutoLinkageDetailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-auto-linkage-detail
+      Handler: lambda_api.auto_linkage_detail.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages/{connection_type}
+            Method: GET
+  AutoLinkageUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-auto-linkage-update
+      Handler: lambda_api.auto_linkage_update.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages/{connection_type}
+            Method: PUT
+  AutoLinkageLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-auto-linkage-login
+      Handler: lambda_api.auto_linkage_login.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages/{connection_type}/login
+            Method: POST
+  AutoLinkageDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-auto-linkage-delete
+      Handler: lambda_api.auto_linkage_delete.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages/{connection_type}
+            Method: DELETE
 
 Outputs:
   ApiUrl:
