@@ -7,6 +7,7 @@ from src.api.utils import now_ymd_hms
 from src.common.base import BaseRestApi
 from src.common.exception.error import Error
 from src.common.functions.response import response
+from src.batch.auto_csv_input_belc.autoCsvInput_Belc import AutoCsvInput_Belc
 from src.batch.auto_csv_input_suica.autoCsvInput_Suica import AutoCsvInput_Suica
 
 
@@ -62,8 +63,7 @@ class AutoLinkageApi(BaseRestApi):
         
         # 手動実行
         if action == "run":
-            result = self.run_place(body, user_id, request_dict)
-            return response(200, result)
+            return self.run_place(body, user_id, request_dict)
         
         # 自動連携削除
         if action == "delete":
@@ -116,14 +116,27 @@ class AutoLinkageApi(BaseRestApi):
         if current and not password:
             password = self.value(current, "LOGIN_PW_1", "login_pw_1") or ""
         if enabled and (not account_id or not password):
-            return response(400, {"errorMessage": "連携を有効にするには会員IDとパスワードが必要です。"})
+            raise Error(
+                status_code=400,
+                error_code="1000062",
+                message="連携を有効にするには会員IDとパスワードが必要です。",
+            )
 
         ymd, hms = now_ymd_hms()
+        urls = self.default_urls(place["connectionType"])
         if current:
             where={
                     "id": self.value(current, "id", "ID"),
                     "SUP_NAME": place["supplierName"],
                     "INV_REG_NUM": place["invoiceRegistrationNumber"],
+                    "PAGE_NAME_1": urls["historyName"],
+                    "PAGE_URL_1": urls["historyUrl"],
+                    "PAGE_NAME_2": urls["loginName"],
+                    "PAGE_URL_2": urls["loginUrl"],
+                    "PAGE_NAME_3": urls.get("loginPostName"),
+                    "PAGE_URL_3": urls.get("loginPostUrl"),
+                    "PAGE_NAME_4": urls.get("historySearchName"),
+                    "PAGE_URL_4": urls.get("historySearchUrl"),
                     "LOGIN_ID_1": account_id,
                     "LOGIN_PW_1": password,
                     "ENABLED": enabled,
@@ -133,10 +146,8 @@ class AutoLinkageApi(BaseRestApi):
                     "USER_ID": user_id,
                 }
             
-            self.database.update(self.database.read_sql("UPDATE_AUTO_CSV_INPUT_INFO",location="__file__"), where)
+            self.database.update(self.database.read_sql("UPDATE_AUTO_CSV_INPUT_INFO", location=__file__), where)
         else:
-            urls = self.default_urls(place["connectionType"])
-
             where={
                     "INV_REG_NUM": place["invoiceRegistrationNumber"],
                     "SUP_NAME": place["supplierName"],
@@ -144,6 +155,10 @@ class AutoLinkageApi(BaseRestApi):
                     "PAGE_URL_1": urls["historyUrl"],
                     "PAGE_NAME_2": urls["loginName"],
                     "PAGE_URL_2": urls["loginUrl"],
+                    "PAGE_NAME_3": urls.get("loginPostName"),
+                    "PAGE_URL_3": urls.get("loginPostUrl"),
+                    "PAGE_NAME_4": urls.get("historySearchName"),
+                    "PAGE_URL_4": urls.get("historySearchUrl"),
                     "LOGIN_ID_1": account_id,
                     "LOGIN_PW_1": password,
                     "ENABLED": enabled,
@@ -154,8 +169,8 @@ class AutoLinkageApi(BaseRestApi):
                     "UPD_TM": hms,
                     "USER_ID": user_id,
                 }
-            self.database.insert(self.database.read_sql("INSERT_AUTO_CSV_INPUT_INFO",location="__file__"),where)
-        return response(200, {"ok": True, "message": "自動連携設定を保存しました。"})
+            self.database.insert(self.database.read_sql("INSERT_AUTO_CSV_INPUT_INFO", location=__file__), where)
+        return {"ok": True, "message": "自動連携設定を保存しました。"}
 
     def login_place(self, body, user_id):
         """
@@ -172,15 +187,19 @@ class AutoLinkageApi(BaseRestApi):
         account_id = str(body.get("accountId") or self.value(row, "LOGIN_ID_1", "login_id_1") or "").strip()
         password = str(body.get("password") or self.value(row, "LOGIN_PW_1", "login_pw_1") or "")
         if not account_id or not password:
-            return response(400, {"errorMessage": "会員IDとパスワードを入力してください。"})
+            raise Error(
+                status_code=400,
+                error_code="1000062",
+                message="会員IDとパスワードを入力してください。",
+            )
 
         # 外部サイトの追加認証を考慮し、ここでは保存済み認証情報の利用可否を確認する。
         self.update_login_status(row, user_id, "READY")
-        return response(200, {
+        return {
             "ok": True,
             "status": "READY",
             "message": "認証情報を確認しました。次回の自動連携実行時に公式サイトへログインします。",
-        })
+        }
 
     def delete_place(self, body, user_id):
         """
@@ -202,8 +221,8 @@ class AutoLinkageApi(BaseRestApi):
                 "UPD_TM": hms,
                 "USER_ID": user_id,
             }
-            self.database.update(self.database.read_sql("DELETE_AUTO_CSV_INPUT_INFO",location="__file__"),where)
-        return response(200, {"ok": True, "message": "会員アカウントを削除しました。"})
+            self.database.update(self.database.read_sql("DELETE_AUTO_CSV_INPUT_INFO", location=__file__),where)
+        return {"ok": True, "message": "会員アカウントを削除しました。"}
 
     def find_row(self, connection_type, user_id):
         """
@@ -218,12 +237,12 @@ class AutoLinkageApi(BaseRestApi):
             "USER_ID": user_id,
             "CONNECTION_TYPE": connection_type,
         }
-        rows = self.database.select(self.database.read_sql("SELECT_AUTO_CSV_INPUT_INFO",location="__file__"), where)
+        rows = self.database.select(self.database.read_sql("SELECT_AUTO_CSV_INPUT_INFO", location=__file__), where)
         return rows[0] if rows else {}
 
     def run_place(self, body, user_id, request_dict):
         """
-        手動実行。現在は Suica のみ対応。
+        指定した連携先のデータ連携を手動実行する。
         args:
             - body (dict): リクエストボディ。connectionType を含む必要がある。
             - user_id (str): ユーザーID
@@ -232,10 +251,35 @@ class AutoLinkageApi(BaseRestApi):
             - dict: 処理結果。
         """
         place = self.require_place(body)
-        if place["connectionType"] != "SUICA":
-            return response(400, {"errorMessage": "手動実行は現在 Suica のみ対応しています。"})
+        row = self.find_row(place["connectionType"], user_id)
+        if not row or not self.value(row, "LOGIN_ID_1", "login_id_1") or not self.value(row, "LOGIN_PW_1", "login_pw_1"):
+            raise Error(
+                status_code=400,
+                error_code="1000062",
+                message="先にログイン情報を保存してください。",
+            )
 
-        # Suicaの自動連携を手動で実行する。
+        if place["connectionType"] == "BELC":
+            result = AutoCsvInput_Belc().call(
+                body={"action": "run"},
+                headers={"x-kakeibo-user-id": user_id},
+            )
+            body_result = result.get("body") or {}
+            if int(result.get("statusCode", 500)) >= 400:
+                return response(result.get("statusCode", 500), body_result)
+            registered_count = int(body_result.get("registered") or 0)
+            fetched_count = int(body_result.get("need_to_register") or 0)
+            return response(200, {
+                "ok": True,
+                "status": "COMPLETED",
+                "message": f"ベルクのデータ連携が完了しました。{registered_count}件を登録しました。",
+                "fetchedCount": fetched_count,
+                "insertedCount": registered_count,
+                "duplicateCount": max(0, fetched_count - registered_count),
+                "registeredCount": registered_count,
+            })
+
+        # Suicaは画像認証を含む既存の手動実行フローを使用する。
         result = AutoCsvInput_Suica().call(
             body={
                 "action": body.get("runAction") or "start",
@@ -260,12 +304,12 @@ class AutoLinkageApi(BaseRestApi):
         ymd, hms = now_ymd_hms()
         where={
             "id": self.value(row, "id", "ID"), 
-            "LAST_LOGIN_STATUS": status,
+            "STATUS": status,
             "LAST_LOGIN_DT": ymd,
             "LAST_LOGIN_TM": hms,
             "USER_ID": user_id,
         }
-        self.database.update(self.database.read_sql("UPDATE_LOGIN_STATUS_AUTO_CSV_INPUT_INFO",location="__file__"), where)
+        self.database.update(self.database.read_sql("UPDATE_AUTO_CSV_INPUT_INFO_STATUS", location=__file__), where)
 
     def public_row(self, place, row, include_account=False):
         """
@@ -304,9 +348,19 @@ class AutoLinkageApi(BaseRestApi):
         for place in SUPPORTED_PLACES:
             if place["connectionType"] == connection_type:
                 return place
-        raise Error(400, {"errorMessage": "対応していない自動連携先です。"})
+        raise Error(status_code=400, error_code="1000062", message="対応していない自動連携先です。")
 
     def default_urls(self, connection_type):
+        """
+        連携先ごとの初期ページ名とURLを返す。
+
+        args:
+            - connection_type (str): 連携先の識別子。
+        returns:
+            - dict: 自動連携設定へ保存するページ情報。
+        raises:
+            - Error: 対応していない自動連携先の場合。
+        """
         if connection_type == "SUICA":
             return {
                 "loginName": "会員メニューサイト",
@@ -318,10 +372,14 @@ class AutoLinkageApi(BaseRestApi):
             return {
                 "loginName": "ベルク会員ログイン",
                 "loginUrl": "https://cust-bf.belc.jp/mypage/Login",
+                "loginPostName": "ベルク会員ログイン送信",
+                "loginPostUrl": "https://cust-bf.belc.jp/mypage/Login?handler=Login",
                 "historyName": "お買い物履歴",
                 "historyUrl": "https://cust-bf.belc.jp/mypage/PurchaseHistory",
+                "historySearchName": "お買い物履歴検索",
+                "historySearchUrl": "https://cust-bf.belc.jp/mypage/PurchaseHistory?handler=Search",
             }
-        raise Error(400, {"errorMessage": "対応していない自動連携先です。"})
+        raise Error(status_code=400, error_code="1000062", message="対応していない自動連携先です。")
 
     @staticmethod
     def value(row, *keys):

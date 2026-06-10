@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
-"""Helpers for storing both tax-excluded and tax-included receipt prices."""
+"""税抜価格と税込価格を保存するための共通処理。"""
 
 
 def to_number(value, default=0):
@@ -35,7 +35,15 @@ def round_price(value):
 
 
 def enrich_detail_prices(detail: dict, tax_flag) -> dict:
-    """Return price values for display, tax-excluded storage, and tax-included storage."""
+    """
+    明細の既存価格を優先し、不足している税抜・税込価格だけを補完する。
+
+    args:
+        - detail (dict): レシート明細。
+        - tax_flag: 元のレシートが税抜か税込かを示す値。
+    returns:
+        - dict: 表示用、税抜保存用、税込保存用の価格。
+    """
     if not isinstance(detail, dict):
         detail = {}
 
@@ -45,34 +53,45 @@ def enrich_detail_prices(detail: dict, tax_flag) -> dict:
 
     display_unit = to_number(detail.get("unitPrice"))
     display_total = to_number(detail.get("totalPrice"))
+    quantity = to_number(detail.get("quantity"), 1) or 1
+    discount = to_number(detail.get("discount"))
+    base_total = max(0, display_unit * quantity - discount)
 
     tax_excluded_unit = detail.get("taxExcludedUnitPrice")
     tax_excluded_total = detail.get("taxExcludedTotalPrice")
     tax_included_unit = detail.get("taxIncludedUnitPrice")
     tax_included_total = detail.get("taxIncludedTotalPrice")
 
-    if tax_excluded_unit in (None, "") or tax_excluded_total in (None, ""):
+    if tax_excluded_unit in (None, ""):
         if is_tax_excluded:
             tax_excluded_unit = display_unit
-            tax_excluded_total = display_total
         else:
             tax_excluded_unit = round_price(display_unit / tax_multiplier) if display_unit else 0
+
+    if tax_excluded_total in (None, ""):
+        if is_tax_excluded:
+            # 税抜入力では、画面表示用の税込合計ではなく入力値から税抜合計を復元する。
+            tax_excluded_total = base_total if base_total else (
+                round_price(display_total / tax_multiplier) if display_total else 0
+            )
+        else:
             tax_excluded_total = round_price(display_total / tax_multiplier) if display_total else 0
 
-    if tax_included_unit in (None, "") or tax_included_total in (None, ""):
+    if tax_included_unit in (None, ""):
         if is_tax_excluded:
             tax_included_unit = round_price(to_number(tax_excluded_unit) * tax_multiplier)
-            tax_included_total = round_price(to_number(tax_excluded_total) * tax_multiplier)
         else:
             tax_included_unit = display_unit
+
+    if tax_included_total in (None, ""):
+        if is_tax_excluded:
+            tax_included_total = round_price(to_number(tax_excluded_total) * tax_multiplier)
+        else:
             tax_included_total = display_total
 
-    if is_tax_excluded:
-        display_unit = to_number(tax_included_unit)
-        display_total = to_number(tax_included_total)
-    else:
-        display_unit = to_number(tax_included_unit)
-        display_total = to_number(tax_included_total)
+    # 画面表示と家計簿集計では税込価格に統一する。
+    display_unit = to_number(tax_included_unit)
+    display_total = to_number(tax_included_total)
 
     return {
         "unitPrice": to_display_number(display_unit),

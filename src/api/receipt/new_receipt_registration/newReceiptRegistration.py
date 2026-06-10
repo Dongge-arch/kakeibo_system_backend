@@ -80,6 +80,7 @@ class NewReceiptRegistration(BaseRestApi):
                     status_code=510,
                     error_code="1000062",
                     message="receiptDetailCountとreceiptDetailsの数が一致しません。")
+        self.raise_if_duplicate_receipt(receipt_info=receipt_info, user_id=user_id)
         receipt_id = self.create_receipt_id(receipt_info=receipt_info, user_id=user_id)
         invoice_number = self.normalize_or_create_receipt_number(receipt_info.get("invoiceRegistrationNumber", ""), user_id)
         receipt_info["invoiceRegistrationNumber"] = invoice_number
@@ -103,6 +104,50 @@ class NewReceiptRegistration(BaseRestApi):
         }
 
         return response(status_code=201, body=api_response)
+
+    def raise_if_duplicate_receipt(self, receipt_info: Dict[str, Any], user_id: str) -> None:
+        """
+        同一店舗、日付、時刻、合計金額のレシートが登録済みか確認する。
+
+        Args:
+            receipt_info(Dict[str, Any]): 登録対象のレシート情報。
+            user_id(str): ユーザーID。
+
+        Raises:
+            Error: 同一条件のレシートがすでに登録されている場合。
+        """
+        receipt_date = self.normalize_receipt_date(receipt_info.get("receiptDate"))
+        receipt_time = self.normalize_receipt_time(receipt_info.get("receiptTime"))
+        params = {
+            "SUP_NAME": receipt_info.get("supplierName"),
+            "RET_DT": receipt_date,
+            "RET_TM": receipt_time,
+            "TOA_PRICE": receipt_info.get("totalPrice"),
+            "USER_ID": user_id,
+        }
+        sql = self.database.read_sql("SELECT_DUPLICATE_RECEIPT", location=__file__)
+        if self.database.select(sql, params=params):
+            raise Error(
+                status_code=409,
+                error_code="1000062",
+                message="このレシートはすでに登録されています。",
+            )
+
+    @staticmethod
+    def normalize_receipt_date(value) -> str:
+        """レシート日付をDB保存形式へ変換する。"""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%Y%m%d") if "-" in text else text
+
+    @staticmethod
+    def normalize_receipt_time(value) -> str:
+        """レシート時刻をDB保存形式へ変換する。"""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return datetime.strptime(text, "%H:%M").strftime("%H%M%S") if ":" in text else text
 
     def exception(self, e: Exception) -> dict:
         """

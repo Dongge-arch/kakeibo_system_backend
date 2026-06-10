@@ -152,6 +152,7 @@ class AutoCsvInput_Belc(BaseBatch):
             headers,
             history_URL,
             history_search_URL,
+            first_html=history_res.text,
         )
         self.logger.info(f"all_datetimes (JP format): {all_datetimes}")
         
@@ -351,27 +352,33 @@ class AutoCsvInput_Belc(BaseBatch):
         return res.text
 
 
-    def get_all_purchase_datetimes(self, session, headers ,history_URL:str,history_search_URL:str) -> list[str]:
+    def get_all_purchase_datetimes(self, session, headers, history_URL: str, history_search_URL: str, first_html: str | None = None) -> list[str]:
         """
         購入履歴ページから全ての購入日時を取得する。
+
+        args:
+            - session: ログイン済みHTTPセッション。
+            - headers (dict): リクエストヘッダー。
+            - history_URL (str): 購入履歴ページURL。
+            - history_search_URL (str): 購入履歴検索URL。
+            - first_html (str | None): 取得済みの1ページ目HTML。
+        returns:
+            - list[str]: 全ページの購入日時。
         """
-        # 1. 先 GET 第 1 页
-        first_res = session.get(
-            history_URL,
-            headers={
-                **headers,
-                "Referer": "https://cust-bf.belc.jp/mypage/Home",
-            },
-            timeout=20,
-            allow_redirects=True,
-        )
-
-
-        first_res.raise_for_status()
-        if "/mypage/PurchaseHistory" not in first_res.url:
-            raise RuntimeError(f"PurchaseHistory access failed. url={first_res.url}")
-
-        first_html = first_res.text
+        if first_html is None:
+            first_res = session.get(
+                history_URL,
+                headers={
+                    **headers,
+                    "Referer": "https://cust-bf.belc.jp/mypage/Home",
+                },
+                timeout=20,
+                allow_redirects=True,
+            )
+            first_res.raise_for_status()
+            if "/mypage/PurchaseHistory" not in first_res.url:
+                raise RuntimeError(f"PurchaseHistory access failed. url={first_res.url}")
+            first_html = first_res.text
 
         update_date = self.extract_update_date(first_html)
         max_page = self.extract_max_page(first_html) # 最大ページ数を取得
@@ -402,7 +409,7 @@ class AutoCsvInput_Belc(BaseBatch):
 
             all_datetimes.extend(page_datetimes)
 
-            # 次のページ POST 
+            # 次ページの検証トークンとして直前のHTMLを使用する。
             current_html = html
 
         return all_datetimes
@@ -1290,6 +1297,7 @@ class AutoCsvInput_Belc(BaseBatch):
         selected_checkboxes = []
         page = 1
         max_page = 1
+        current_html = first_html
         
         self.logger.info(f"Looking for {len(target_datetimes)} target datetimes: {target_datetimes}")
         
@@ -1297,7 +1305,7 @@ class AutoCsvInput_Belc(BaseBatch):
             if page == 1:
                 html = first_html
             else:
-                html = self.get_purchase_history_page(session, headers, history_URL, history_search_URL, page, first_html)
+                html = self.get_purchase_history_page(session, headers, history_URL, history_search_URL, page, current_html)
             
             # Extract max_page from first page
             if page == 1:
@@ -1313,7 +1321,9 @@ class AutoCsvInput_Belc(BaseBatch):
             self.logger.info(f"Searching for matches on page {page}")
             matches = self.find_matching_checkboxes(html, target_datetimes)
             selected_checkboxes.extend(matches)
-            
+
+            # 次ページの検証トークンとして直前のHTMLを使用する。
+            current_html = html
             page += 1
         
         self.logger.info(f"Total matches found: {len(selected_checkboxes)}")
