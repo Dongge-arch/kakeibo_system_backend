@@ -97,7 +97,25 @@ def get_category_name(item: dict, key: str) -> str:
     """DB 由来の大文字キーを安全に読む。"""
     if not isinstance(item, dict):
         return ""
-    return clean_category_label(item.get(key) or item.get(key.upper()) or "")
+    aliases = {
+        "CATEGORY1_NAME": ("CATEGORY1_NAME", "category1Name", "category1_name", "category1"),
+        "CATEGORY2_NAME": ("CATEGORY2_NAME", "category2Name", "category2_name", "category2"),
+    }
+    for alias in aliases.get(key.upper(), (key, key.upper())):
+        value = item.get(alias)
+        if value not in (None, ""):
+            return clean_category_label(value)
+    return ""
+
+
+def get_category_tax_rate(item: dict):
+    """DB形式と画面のcamelCase形式の両方から税率を読む。"""
+    if not isinstance(item, dict):
+        return None
+    for key in ("TAX_RATE", "taxRate", "tax_rate"):
+        if item.get(key) not in (None, ""):
+            return item.get(key)
+    return None
 
 
 def build_category_prompt(categories: dict) -> str:
@@ -121,7 +139,7 @@ def build_category_prompt(categories: dict) -> str:
     for item in category2_list:
         parent = get_category_name(item, "CATEGORY1_NAME")
         child = get_category_name(item, "CATEGORY2_NAME")
-        tax_rate = item.get("TAX_RATE") if isinstance(item, dict) else None
+        tax_rate = get_category_tax_rate(item)
 
         if not parent or not child:
             continue
@@ -178,7 +196,7 @@ def category_tax_rate_map(categories: dict) -> dict[tuple[str, str], float]:
         child = get_category_name(item, "CATEGORY2_NAME")
         if not parent or not child:
             continue
-        result[(parent, child)] = item.get("TAX_RATE") if isinstance(item, dict) else None
+        result[(parent, child)] = get_category_tax_rate(item)
     return result
 
 

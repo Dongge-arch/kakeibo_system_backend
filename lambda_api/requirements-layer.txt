@@ -3,4 +3,5 @@ tzdata
 openpyxl
 psycopg[binary]
 requests
+beautifulsoup4
 boto3

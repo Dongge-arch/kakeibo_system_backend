@@ -297,6 +297,8 @@ class NewReceiptRegistration(BaseRestApi):
             return raw
         if raw.startswith("T") and len(raw) == 14 and raw[1:].isdigit():
             return raw
+        if raw == "SUICA":
+            return raw
         if raw.isdigit() and len(raw) == 13:
             return f"T{raw}"
 

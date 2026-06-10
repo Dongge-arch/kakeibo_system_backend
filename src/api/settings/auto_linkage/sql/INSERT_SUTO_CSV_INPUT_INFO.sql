@@ -1,0 +1,11 @@
+  INSERT INTO auto_csv_input_info (
+    CRE_PROG, UPD_PROG, INV_REG_NUM, SUP_NAME,
+    PAGE_NAME_1, PAGE_URL_1, PAGE_NAME_2, PAGE_URL_2,
+    LOGIN_ID_1, LOGIN_PW_1, ENABLED, CONNECTION_TYPE,
+    CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
+) VALUES (
+    'AutoLinkageApi', 'AutoLinkageApi', %(INV_REG_NUM)s, %(SUP_NAME)s,
+    %(PAGE_NAME_1)s, %(PAGE_URL_1)s, %(PAGE_NAME_2)s, %(PAGE_URL_2)s,
+    %(LOGIN_ID_1)s, %(LOGIN_PW_1)s, %(ENABLED)s, %(CONNECTION_TYPE)s,
+    %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, 0
+)

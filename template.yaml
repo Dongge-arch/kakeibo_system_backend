@@ -1188,6 +1188,18 @@ Resources:
           Properties:
             Path: /auto-linkages/{connection_type}/login
             Method: POST
+  AutoLinkageRunFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-auto-linkage-run
+      Handler: lambda_api.auto_linkage_run.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages/{connection_type}/run
+            Method: POST
   AutoLinkageDeleteFunction:
     Type: AWS::Serverless::Function
     Properties:
