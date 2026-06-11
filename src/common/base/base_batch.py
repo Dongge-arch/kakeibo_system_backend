@@ -17,6 +17,7 @@ from src.common.const.datetime import TIME_ZONE_JST
 from src.common.const.logger import REQUEST_BODY, REQUEST_HEADER, RESULT
 from src.common.database.factory import create_database
 from src.common.exception import Error
+from src.common.log_sanitizer import sanitize_log_value
 
 
 class BaseBatch(Base, ABC):
@@ -80,12 +81,12 @@ class BaseBatch(Base, ABC):
             self.logger.info(
                 "%s: %s",
                 REQUEST_HEADER,
-                json.dumps(request_dict["headers"], ensure_ascii=False),
+                json.dumps(sanitize_log_value(request_dict["headers"]), ensure_ascii=False),
             )
             self.logger.info(
                 "%s: %s",
                 REQUEST_BODY,
-                json.dumps(request_dict["body"], ensure_ascii=False, default=str),
+                json.dumps(sanitize_log_value(request_dict["body"]), ensure_ascii=False, default=str),
             )
 
             if validate_h:
@@ -100,7 +101,7 @@ class BaseBatch(Base, ABC):
             self.logger.info(
                 "%s: %s",
                 RESULT,
-                json.dumps(response, ensure_ascii=False, default=str),
+                json.dumps(sanitize_log_value(response), ensure_ascii=False, default=str),
             )
             return response
 
@@ -112,7 +113,7 @@ class BaseBatch(Base, ABC):
             self.logger.info(
                 "%s: %s",
                 RESULT,
-                json.dumps(response, ensure_ascii=False, default=str),
+                json.dumps(sanitize_log_value(response), ensure_ascii=False, default=str),
             )
             return response
         finally:

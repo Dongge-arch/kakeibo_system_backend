@@ -19,6 +19,7 @@ from src.common.auth_context import reset_current_user_id, set_current_user_id
 from src.common.database.factory import create_database
 from src.common.database.postgresql import Postgresql
 from src.common.exception import Error
+from src.common.log_sanitizer import sanitize_log_value
 
 
 class BaseRestApi(Base, ABC):
@@ -91,12 +92,12 @@ class BaseRestApi(Base, ABC):
             self.logger.info(
                 "%s: %s",
                 REQUEST_HEADER,
-                json.dumps(request_dict["headers"], ensure_ascii=False),
+                json.dumps(sanitize_log_value(request_dict["headers"]), ensure_ascii=False),
             )
             self.logger.info(
                 "%s: %s",
                 REQUEST_BODY,
-                json.dumps(request_dict["body"], ensure_ascii=False, default=str),
+                json.dumps(sanitize_log_value(request_dict["body"]), ensure_ascii=False, default=str),
             )
 
             if validate_h:
@@ -111,7 +112,7 @@ class BaseRestApi(Base, ABC):
             self.logger.info(
                 "%s: %s",
                 RESULT,
-                json.dumps(response, ensure_ascii=False, default=str),
+                json.dumps(sanitize_log_value(response), ensure_ascii=False, default=str),
             )
             return response
 
@@ -123,7 +124,7 @@ class BaseRestApi(Base, ABC):
             self.logger.info(
                 "%s: %s",
                 RESULT,
-                json.dumps(response, ensure_ascii=False, default=str),
+                json.dumps(sanitize_log_value(response), ensure_ascii=False, default=str),
             )
             return response
         finally:

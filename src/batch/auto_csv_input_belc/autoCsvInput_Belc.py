@@ -7,6 +7,7 @@
 
 import json
 import requests
+import time
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime
@@ -15,6 +16,7 @@ from urllib.parse import urljoin
 from src.common.base.base_batch import BaseBatch
 from src.common.functions.response import response
 from src.common.auth_context import reset_current_user_id, set_current_user_id
+from src.common.exception import Error
 from src.api.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
 from src.api.receipt.ai_receipt.receiptAnalyzer import (
     GeminiReceiptAnalyzer,
@@ -27,6 +29,9 @@ from src.api.receipt.taxPrice import normalize_tax_rate
 BELC_INVOICE_NUMBER = "T8030001085963"
 BELC_SUPPLIER_NAME = "ベルク"
 AUTO_INPUT_STATUS_REGISTERED = "3"
+BELC_REQUEST_RETRY_COUNT = 3
+BELC_REQUEST_RETRY_BACKOFF_SECONDS = 1
+BELC_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 BELC_CATEGORY_NAMES = {
     "01": "青果",
     "04": "精肉",
@@ -96,8 +101,13 @@ class AutoCsvInput_Belc(BaseBatch):
         }
 
 
-        login_page = session.get(login_page_URL, headers=headers, timeout=20)
-        login_page.raise_for_status()
+        login_page = self.request_belc(
+            session,
+            "GET",
+            login_page_URL,
+            headers=headers,
+            operation_name="ログインページ取得",
+        )
 
         soup = BeautifulSoup(login_page.text, "html.parser")
 
@@ -120,7 +130,9 @@ class AutoCsvInput_Belc(BaseBatch):
 
 
         # ログイン操作
-        login_res = session.post(
+        login_res = self.request_belc(
+            session,
+            "POST",
             login_post_URL,
             data=payload,
             headers={
@@ -129,21 +141,21 @@ class AutoCsvInput_Belc(BaseBatch):
                 "Origin": "https://cust-bf.belc.jp",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
-            timeout=20,
             allow_redirects=True,
+            operation_name="ログイン",
         )
-        login_res.raise_for_status()
 
         # ログイン後のクッキーを確認
-        history_res = session.get(
+        history_res = self.request_belc(
+            session,
+            "GET",
             history_URL,
             headers={
                 **headers,
                 "Referer": login_page_URL,
             },
-            timeout=20,
+            operation_name="購入履歴取得",
         )
-        history_res.raise_for_status()
         if "/mypage/Login" in history_res.url:
             raise RuntimeError("Login failed for Belc PurchaseHistory access")
 
@@ -224,6 +236,9 @@ class AutoCsvInput_Belc(BaseBatch):
                 self.insert_auto_input_cont(receipt_info, user_id)
                 self.logger.info(f"Receipt registered: {result}")
                 registered_count += 1
+            except Error:
+                # 外部サービス障害は処理済み扱いにせず、呼び出し元へ返却する。
+                raise
             except Exception as e:
                 self.logger.error(f"Failed to register receipt: {e}")
 
@@ -231,6 +246,61 @@ class AutoCsvInput_Belc(BaseBatch):
             "need_to_register": len(need_to_register_datetimes),
             "registered": registered_count
         })
+
+    def request_belc(self, session, method: str, url: str, operation_name: str, **kwargs):
+        """
+        BelcサイトへのHTTP通信を実行し、一時的な障害の場合だけ再試行する。
+        """
+        kwargs.setdefault("timeout", 20)
+        last_error = None
+
+        for attempt in range(1, BELC_REQUEST_RETRY_COUNT + 1):
+            try:
+                result = session.request(method=method, url=url, **kwargs)
+                if result.status_code not in BELC_RETRY_STATUS_CODES:
+                    result.raise_for_status()
+                    return result
+
+                last_error = requests.HTTPError(
+                    f"{result.status_code} Server Error for url: {url}",
+                    response=result,
+                )
+                self.logger.warning(
+                    "Belc通信一時エラー operation=%s status=%s attempt=%s/%s",
+                    operation_name,
+                    result.status_code,
+                    attempt,
+                    BELC_REQUEST_RETRY_COUNT,
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+                status_code = exc.response.status_code if exc.response is not None else None
+                if status_code not in BELC_RETRY_STATUS_CODES and status_code is not None:
+                    raise
+                self.logger.warning(
+                    "Belc通信失敗 operation=%s status=%s attempt=%s/%s error=%s",
+                    operation_name,
+                    status_code,
+                    attempt,
+                    BELC_REQUEST_RETRY_COUNT,
+                    exc,
+                )
+
+            if attempt < BELC_REQUEST_RETRY_COUNT:
+                # リトライ間隔を段階的に延ばし、外部サイトへの連続アクセスを避ける。
+                time.sleep(BELC_REQUEST_RETRY_BACKOFF_SECONDS * attempt)
+
+        self.logger.error(
+            "Belc通信が再試行後も失敗しました operation=%s url=%s error=%s",
+            operation_name,
+            url,
+            last_error,
+        )
+        raise Error(
+            status_code=503,
+            error_code="1000062",
+            message="ベルクのサービスが一時的に利用できません。時間をおいて再実行してください。",
+        )
 
 
     def exception(self, e: Exception) -> dict:
@@ -331,7 +401,9 @@ class AutoCsvInput_Belc(BaseBatch):
             "__RequestVerificationToken": token,
         }
 
-        res = session.post(
+        res = self.request_belc(
+            session,
+            "POST",
             history_search_URL,
             data=payload,
             headers={
@@ -340,11 +412,9 @@ class AutoCsvInput_Belc(BaseBatch):
                 "Origin": "https://cust-bf.belc.jp",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
-            timeout=20,
             allow_redirects=True,
+            operation_name=f"購入履歴ページ取得 page={page}",
         )
-
-        res.raise_for_status()
 
         if "/mypage/PurchaseHistory" not in res.url:
             raise RuntimeError(f"PurchaseHistory page access failed. url={res.url}")
@@ -366,16 +436,17 @@ class AutoCsvInput_Belc(BaseBatch):
             - list[str]: 全ページの購入日時。
         """
         if first_html is None:
-            first_res = session.get(
+            first_res = self.request_belc(
+                session,
+                "GET",
                 history_URL,
                 headers={
                     **headers,
                     "Referer": "https://cust-bf.belc.jp/mypage/Home",
                 },
-                timeout=20,
                 allow_redirects=True,
+                operation_name="購入履歴初期ページ取得",
             )
-            first_res.raise_for_status()
             if "/mypage/PurchaseHistory" not in first_res.url:
                 raise RuntimeError(f"PurchaseHistory access failed. url={first_res.url}")
             first_html = first_res.text
@@ -892,7 +963,9 @@ class AutoCsvInput_Belc(BaseBatch):
         if not form_data:
             raise RuntimeError(f"Belc receipt detail form fields not found: {checkbox_info}")
         
-        response = session.post(
+        response = self.request_belc(
+            session,
+            "POST",
             detail_url,
             data=form_data,
             headers={
@@ -901,10 +974,9 @@ class AutoCsvInput_Belc(BaseBatch):
                 "Origin": "https://cust-bf.belc.jp",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
-            timeout=20,
             allow_redirects=True,
+            operation_name=f"購入明細取得 receiptNo={form_data.get('ReceiptNo', '')}",
         )
-        response.raise_for_status()
         return response.text
 
     def parse_receipt_info(self, detail_html: str, user_id: str, checkbox_info: dict | None = None) -> dict:
