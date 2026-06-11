@@ -7,6 +7,10 @@ def lambda_handler(event, context):
     body = json.loads(event.get("body") or "{}") if isinstance(
         event.get("body"), str) else event.get("body") or {}
     body["action"] = "run"
-    body["connectionType"] = body.get("connectionType")
+    # connectionType はリクエスト本文ではなく API Gateway のパスパラメータから受け取る。
+    body["connectionType"] = (
+        (event.get("pathParameters") or {}).get("connection_type")
+        or body.get("connectionType")
+    )
     event["body"] = body
     return AutoLinkageApi().lambda_handler(event, context)

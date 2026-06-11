@@ -168,34 +168,26 @@ class AutoCsvInput_Belc(BaseBatch):
         )
         self.logger.info(f"all_datetimes (JP format): {all_datetimes}")
         
-        all_datetimes_list = self.take_datetimes_to_list(all_datetimes)
-        self.logger.info(f"all_datetimes_list (ISO format): {all_datetimes_list}")
-        
-        all_already_registered_datetimes = self.get_datetimes(user_id)
-        self.logger.info(f"already_registered: {all_already_registered_datetimes}")
-        
-        # 購入日時のうち、まだ登録されていないものを抽出
-        need_to_register_datetimes = [dt for dt in all_datetimes_list if dt not in all_already_registered_datetimes]
-        self.logger.info(f"need_to_register_datetimes (ISO): {need_to_register_datetimes}")
-        
-        # 日本テキスト形式の日付に変換して、select_purchase_rows に渡す
-        # (HTMLのテキスト照合に使用するため)
-        need_to_register_datetimes_jp = []
-        for iso_dt in need_to_register_datetimes:
-            for jp_dt in all_datetimes:
-                iso_converted = self.take_datetimes_to_list([jp_dt])[0] if self.take_datetimes_to_list([jp_dt]) else None
-                if iso_converted == iso_dt:
-                    need_to_register_datetimes_jp.append(jp_dt)
-                    break
-        self.logger.info(f"need_to_register_datetimes_jp: {need_to_register_datetimes_jp}")
-        
-        selected_checkboxes = self.select_purchase_rows(
+        # 日時だけでは同一分内の別レシートを区別できないため、全行のhidden値から一意キーを作る。
+        all_purchase_rows = self.select_purchase_rows(
             session,
             headers,
             history_URL,
             history_search_URL,
-            need_to_register_datetimes_jp,
+            all_datetimes,
             first_html=history_res.text,
+        )
+        registered_records = self.get_registered_purchase_records(user_id)
+        selected_checkboxes = [
+            row for row in all_purchase_rows
+            if not self.is_registered_purchase(row, registered_records)
+        ]
+        already_registered_count = len(all_purchase_rows) - len(selected_checkboxes)
+        self.logger.info(
+            "Belc purchase rows: total=%s, already_registered=%s, need_to_register=%s",
+            len(all_purchase_rows),
+            already_registered_count,
+            len(selected_checkboxes),
         )
         self.logger.info(f"selected_checkboxes={self.summarize_selected_checkboxes(selected_checkboxes)}")
 
@@ -204,6 +196,7 @@ class AutoCsvInput_Belc(BaseBatch):
         ai_analyzer = GeminiReceiptAnalyzer(timeout=40)
         categories = self.load_receipt_categories(user_id)
         registered_count = 0
+        failed_count = 0
         for checkbox_info in selected_checkboxes:
             try:
                 receipt_detail_html = self.fetch_receipt_detail(
@@ -240,11 +233,15 @@ class AutoCsvInput_Belc(BaseBatch):
                 # 外部サービス障害は処理済み扱いにせず、呼び出し元へ返却する。
                 raise
             except Exception as e:
+                failed_count += 1
                 self.logger.error(f"Failed to register receipt: {e}")
 
         return response(status_code=200, body={
-            "need_to_register": len(need_to_register_datetimes),
-            "registered": registered_count
+            "totalFetched": len(all_purchase_rows),
+            "alreadyRegistered": already_registered_count,
+            "needToRegister": len(selected_checkboxes),
+            "registered": registered_count,
+            "failed": failed_count,
         })
 
     def request_belc(self, session, method: str, url: str, operation_name: str, **kwargs):
@@ -265,12 +262,20 @@ class AutoCsvInput_Belc(BaseBatch):
                     f"{result.status_code} Server Error for url: {url}",
                     response=result,
                 )
+                # Lambda側だけ失敗する場合に、WAF・ロードバランサー・アクセス制限を判別できる情報を残す。
+                response_preview = " ".join((result.text or "")[:300].split())
                 self.logger.warning(
-                    "Belc通信一時エラー operation=%s status=%s attempt=%s/%s",
+                    "Belc通信一時エラー operation=%s status=%s attempt=%s/%s "
+                    "response_url=%s server=%s via=%s retry_after=%s body=%s",
                     operation_name,
                     result.status_code,
                     attempt,
                     BELC_REQUEST_RETRY_COUNT,
+                    result.url,
+                    result.headers.get("Server", ""),
+                    result.headers.get("Via", ""),
+                    result.headers.get("Retry-After", ""),
+                    response_preview,
                 )
             except requests.RequestException as exc:
                 last_error = exc
@@ -596,9 +601,9 @@ class AutoCsvInput_Belc(BaseBatch):
 
         return result[0]
 
-    def get_datetimes(self, user_id: str) -> list[str]:
+    def get_registered_purchase_records(self, user_id: str) -> dict:
         """
-        既に登録されている購入日時のリストを取得する。
+        登録済みBelcレシートの一意キーと、旧データ互換用の日時・レシート番号を取得する。
         """
         sql = self.database.read_sql("SELECT_AUTO_CSV_INPUT_CONT", __file__)
         params = {
@@ -607,12 +612,59 @@ class AutoCsvInput_Belc(BaseBatch):
             "AUTO_INPUT_STATUS": AUTO_INPUT_STATUS_REGISTERED # 登録済みのレコードのみ取得
         }
         result = self.database.select(sql, params)
-        datetime_list = []
+        source_keys = set()
+        legacy_keys = set()
         for row in result:
-            dt_str = self.auto_input_datetime_to_iso(row.get("RET_DT") or row.get("ret_dt"), row.get("RET_TM") or row.get("ret_tm"))
-            if dt_str:
-                datetime_list.append(dt_str)
-        return datetime_list
+            source_key = str(row.get("SOURCE_KEY") or row.get("source_key") or "").strip()
+            if source_key:
+                source_keys.add(source_key)
+            date_text = self.normalize_auto_input_date(row.get("RET_DT") or row.get("ret_dt"))
+            time_text = self.normalize_auto_input_time(row.get("RET_TM") or row.get("ret_tm"))
+            receipt_no = str(row.get("RET_CONT") or row.get("ret_cont") or "").strip()
+            if date_text and time_text and receipt_no:
+                legacy_keys.add((date_text, time_text, receipt_no))
+        return {"sourceKeys": source_keys, "legacyKeys": legacy_keys}
+
+    def purchase_source_key(self, checkbox_info: dict) -> str:
+        """
+        Belcの店舗・POS・日付・レシート番号から安定した一意キーを作る。
+        """
+        form_data = checkbox_info.get("form_data") or {}
+        date_digits = re.sub(r"\D", "", str(form_data.get("Date") or ""))[:8]
+        parts = [
+            str(form_data.get("StoreCode") or "").strip(),
+            str(form_data.get("PosNo") or "").strip(),
+            date_digits,
+            str(form_data.get("ReceiptNo") or "").strip(),
+        ]
+        if not all(parts):
+            return ""
+        return f"BELC:{':'.join(parts)}"
+
+    def purchase_legacy_key(self, checkbox_info: dict) -> tuple[str, str, str] | None:
+        """
+        SOURCE_KEY導入前のレコードと比較するため、購入日時とレシート番号を取り出す。
+        """
+        form_data = checkbox_info.get("form_data") or {}
+        receipt_no = str(form_data.get("ReceiptNo") or "").strip()
+        receipt_datetime = self.extract_receipt_datetime(checkbox_info.get("row_text") or "")
+        if not receipt_no or not receipt_datetime:
+            return None
+        return (
+            receipt_datetime.strftime("%Y%m%d"),
+            receipt_datetime.strftime("%H%M%S"),
+            receipt_no,
+        )
+
+    def is_registered_purchase(self, checkbox_info: dict, registered_records: dict) -> bool:
+        """
+        新一意キーを優先し、旧レコードは日時・レシート番号で重複判定する。
+        """
+        source_key = self.purchase_source_key(checkbox_info)
+        if source_key and source_key in registered_records.get("sourceKeys", set()):
+            return True
+        legacy_key = self.purchase_legacy_key(checkbox_info)
+        return bool(legacy_key and legacy_key in registered_records.get("legacyKeys", set()))
 
     def insert_auto_input_cont(self, receipt_info: dict, user_id: str) -> None:
         """
@@ -633,6 +685,15 @@ class AutoCsvInput_Belc(BaseBatch):
             "RET_DT": receipt_date,
             "RET_TM": receipt_time,
             "AUTO_INPUT_STATUS": AUTO_INPUT_STATUS_REGISTERED,
+            "CONNECTION_TYPE": "BELC",
+            "SOURCE_KEY": self.purchase_source_key({
+                "form_data": {
+                    "StoreCode": receipt_info.get("storeCode"),
+                    "PosNo": receipt_info.get("posNo"),
+                    "Date": receipt_date,
+                    "ReceiptNo": receipt_info.get("receiptNo"),
+                }
+            }),
             "CRE_DT": datetime.now().strftime("%Y%m%d"),
             "CRE_TM": datetime.now().strftime("%H%M%S"),
             "UPD_DT": datetime.now().strftime("%Y%m%d"),

@@ -134,6 +134,8 @@ class ReceiptReference(BaseRestApi):
                         "taxRate": d.get("TAX_RATE"),
                         "quantity": d.get("QTY"),
                         "unitPrice": d.get("UT_PRE"),
+                        # レシート保存額と明細金額を混同しないよう、ヘッダ合計を別項目で返す。
+                        "receiptTotalPrice": r.get("TOA_PRICE"),
                         "totalPrice": d.get("TO_PRE"),
                         "taxExcludedUnitPrice": d.get("UT_TAX_EXCLUDED"),
                         "taxExcludedTotalPrice": d.get("TO_TAX_EXCLUDED"),

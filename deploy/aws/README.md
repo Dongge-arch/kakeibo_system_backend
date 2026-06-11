@@ -5,7 +5,9 @@
 ## ファイル
 
 - `deploy_aws.bat`: layer 作成、handler zip 作成、SAM デプロイを実行します。
+- `deploy_aws.sh`: macOS / Linux 用のデプロイスクリプトです。
 - `deploy_aws.env.example.bat`: 設定ファイルのひな形です。
+- `deploy_aws.env.example.sh`: macOS / Linux 用設定ファイルのひな形です。
 - `deploy_aws.env.bat`: 自分の AWS / DB / API key を入れるローカル専用ファイルです。Git へ含めないでください。
 - `application.lambda.yaml`: Lambda 用の安全なアプリ設定です。
 
@@ -19,6 +21,13 @@ deploy_backend.bat
 
 ```bat
 deploy\aws\deploy_aws.bat
+```
+
+macOS では設定ファイルを作成してから実行します。
+
+```bash
+cp deploy/aws/deploy_aws.env.example.sh deploy/aws/deploy_aws.env.sh
+./deploy/aws/deploy_aws.sh
 ```
 
 ## 処理内容

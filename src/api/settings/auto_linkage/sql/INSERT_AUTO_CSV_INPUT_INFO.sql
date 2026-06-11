@@ -4,10 +4,16 @@
     PAGE_NAME_3, PAGE_URL_3, PAGE_NAME_4, PAGE_URL_4,
     LOGIN_ID_1, LOGIN_PW_1, ENABLED, CONNECTION_TYPE,
     CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
-) VALUES (
+) SELECT
     'AutoLinkageApi', 'AutoLinkageApi', %(INV_REG_NUM)s, %(SUP_NAME)s,
     %(PAGE_NAME_1)s, %(PAGE_URL_1)s, %(PAGE_NAME_2)s, %(PAGE_URL_2)s,
     %(PAGE_NAME_3)s, %(PAGE_URL_3)s, %(PAGE_NAME_4)s, %(PAGE_URL_4)s,
     %(LOGIN_ID_1)s, %(LOGIN_PW_1)s, %(ENABLED)s, %(CONNECTION_TYPE)s,
     %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, 0
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM auto_csv_input_info
+    WHERE CRE_USER_ID = %(USER_ID)s
+      AND CONNECTION_TYPE = %(CONNECTION_TYPE)s
+      AND DEL_FLAG = 0
 )

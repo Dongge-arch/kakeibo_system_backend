@@ -56,7 +56,7 @@ class AutoLinkageApi(BaseRestApi):
             result = self.update_place(body, user_id)
             return response(200, result)
         
-        # ログイン確認（会員ID、パスワードの妥当性確認。外部サイトの追加認証は考慮しない）
+        # 保存済みログイン情報の入力有無を確認する。実サイトへの認証は取り込み時に行う。
         if action == "login":
             result = self.login_place(body, user_id)
             return response(200, result)
@@ -81,6 +81,8 @@ class AutoLinkageApi(BaseRestApi):
         returns:
             - list: 連携先の設定情報のリスト。
         """
+        # 新規ユーザーでも画面に連携先を表示できるよう、未作成の初期レコードを補完する。
+        self.ensure_default_places(user_id)
         result = []
         for place in SUPPORTED_PLACES:
             row = self.find_row(place["connectionType"], user_id)
@@ -97,7 +99,50 @@ class AutoLinkageApi(BaseRestApi):
             - dict: 連携先の設定情報。
         """
         place = self.require_place(body)
+        self.ensure_default_place(place, user_id)
         return self.public_row(place, self.find_row(place["connectionType"], user_id), include_account=True)
+
+    def ensure_default_places(self, user_id):
+        """
+        対応している連携先の初期レコードをユーザー単位で作成する。
+        """
+        for place in SUPPORTED_PLACES:
+            self.ensure_default_place(place, user_id)
+
+    def ensure_default_place(self, place, user_id):
+        """
+        指定した連携先が未作成の場合、ログイン情報が空の初期レコードを作成する。
+        """
+        if self.find_row(place["connectionType"], user_id):
+            return
+
+        ymd, hms = now_ymd_hms()
+        urls = self.default_urls(place["connectionType"])
+        params = {
+            "INV_REG_NUM": place["invoiceRegistrationNumber"],
+            "SUP_NAME": place["supplierName"],
+            "PAGE_NAME_1": urls["historyName"],
+            "PAGE_URL_1": urls["historyUrl"],
+            "PAGE_NAME_2": urls["loginName"],
+            "PAGE_URL_2": urls["loginUrl"],
+            "PAGE_NAME_3": urls.get("loginPostName"),
+            "PAGE_URL_3": urls.get("loginPostUrl"),
+            "PAGE_NAME_4": urls.get("historySearchName"),
+            "PAGE_URL_4": urls.get("historySearchUrl"),
+            "LOGIN_ID_1": "",
+            "LOGIN_PW_1": "",
+            "ENABLED": 0,
+            "CONNECTION_TYPE": place["connectionType"],
+            "CRE_DT": ymd,
+            "CRE_TM": hms,
+            "UPD_DT": ymd,
+            "UPD_TM": hms,
+            "USER_ID": user_id,
+        }
+        self.database.insert(
+            self.database.read_sql("INSERT_AUTO_CSV_INPUT_INFO", location=__file__),
+            params,
+        )
 
     def update_place(self, body, user_id):
         """
@@ -174,13 +219,13 @@ class AutoLinkageApi(BaseRestApi):
 
     def login_place(self, body, user_id):
         """
-        会員IDとパスワードの妥当性を確認する。外部サイトの追加認証は考慮しない。
+        会員IDとパスワードが利用可能な状態か確認する。実サイトへの認証は行わない。
         
         args:
             - body (dict): リクエストボディ。connectionType、accountId、password を含む必要がある。
             - user_id (str): ユーザーID
         returns:
-            - dict: 処理結果。成功時は {"ok": True, "status": "READY", "message": "認証情報を確認しました。次回の自動連携実行時に公式サイトへログインします。"} を返す。
+            - dict: 処理結果。入力済みの場合は保存情報を取り込み時に検証する旨を返す。
         """
         place = self.require_place(body)
         row = self.find_row(place["connectionType"], user_id)
@@ -194,11 +239,11 @@ class AutoLinkageApi(BaseRestApi):
             )
 
         # 外部サイトの追加認証を考慮し、ここでは保存済み認証情報の利用可否を確認する。
-        self.update_login_status(row, user_id, "READY")
+        self.update_login_status(row, user_id, "SAVED_UNVERIFIED")
         return {
             "ok": True,
-            "status": "READY",
-            "message": "認証情報を確認しました。次回の自動連携実行時に公式サイトへログインします。",
+            "status": "SAVED_UNVERIFIED",
+            "message": "ログイン情報を確認しました。実際のログイン確認は取り込み時に行います。",
         }
 
     def delete_place(self, body, user_id):
@@ -268,15 +313,22 @@ class AutoLinkageApi(BaseRestApi):
             if int(result.get("statusCode", 500)) >= 400:
                 return response(result.get("statusCode", 500), body_result)
             registered_count = int(body_result.get("registered") or 0)
-            fetched_count = int(body_result.get("need_to_register") or 0)
+            fetched_count = int(body_result.get("totalFetched") or 0)
+            duplicate_count = int(body_result.get("alreadyRegistered") or 0)
+            need_to_register_count = int(body_result.get("needToRegister") or 0)
+            failed_count = int(body_result.get("failed") or 0)
             return response(200, {
                 "ok": True,
                 "status": "COMPLETED",
-                "message": f"ベルクのデータ連携が完了しました。{registered_count}件を登録しました。",
+                "message": (
+                    f"ベルクのデータ連携が完了しました。{registered_count}件を登録しました。"
+                    + (f"{failed_count}件は登録できませんでした。" if failed_count else "")
+                ),
                 "fetchedCount": fetched_count,
-                "insertedCount": registered_count,
-                "duplicateCount": max(0, fetched_count - registered_count),
+                "insertedCount": need_to_register_count,
+                "duplicateCount": duplicate_count,
                 "registeredCount": registered_count,
+                "failedCount": failed_count,
             })
 
         # Suicaは画像認証を含む既存の手動実行フローを使用する。
@@ -321,17 +373,20 @@ class AutoLinkageApi(BaseRestApi):
         returns:
             - dict: APIレスポンス用の設定情報の辞書。
         """
+        account_id = self.value(row, "LOGIN_ID_1", "login_id_1") or ""
+        password_registered = bool(self.value(row, "LOGIN_PW_1", "login_pw_1"))
         result = {
             **place,
-            "configured": bool(row),
+            # 初期レコードだけでは設定済みにせず、IDとパスワードがそろった場合だけ利用可能とする。
+            "configured": bool(account_id and password_registered),
             "enabled": bool(int(self.value(row, "ENABLED", "enabled") or 0)),
             "lastLoginStatus": self.value(row, "LAST_LOGIN_STATUS", "last_login_status") or "",
             "lastLoginDate": self.value(row, "LAST_LOGIN_DT", "last_login_dt") or "",
             "lastLoginTime": self.value(row, "LAST_LOGIN_TM", "last_login_tm") or "",
         }
         if include_account:
-            result["accountId"] = self.value(row, "LOGIN_ID_1", "login_id_1") or ""
-            result["passwordRegistered"] = bool(self.value(row, "LOGIN_PW_1", "login_pw_1"))
+            result["accountId"] = account_id
+            result["passwordRegistered"] = password_registered
         return result
 
     def require_place(self, body):

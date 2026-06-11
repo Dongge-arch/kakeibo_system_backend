@@ -198,7 +198,7 @@ class RecurringExpenseApi(BaseRestApi):
             if not receipt_id:
                 raise ValueError("定期出費の出費明細登録に失敗しました。")
             rule_id = self.row_value(row, "id", "ID")
-            self.mark_run(rule_id, current_month)
+            self.mark_run(rule_id, current_month, user_id)
             created.append({"id": rule_id, "receiptId": receipt_id})
         return json_response(200, {"ok": True, "createdCount": len(created), "created": created})
 
