@@ -48,6 +48,13 @@ def to_int(value) -> int:
         return 0
 
 
+def optional_int(value):
+    """AIが返さなかった価格と、0円の価格を区別して整数へ変換する。"""
+    if value in (None, ""):
+        return None
+    return to_int(value)
+
+
 def normalize_date(value: str) -> str:
     """日付を画面入力で使う YYYY-MM-DD 形式へ寄せる。"""
     raw = str(value or "").strip()
@@ -254,8 +261,11 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 - quantity が読めない場合は 1。
 - discount がない場合は 0。値引きがある場合、discount は必ず正の整数で入れてください。マイナス値は禁止です。
 - 商品の直下や近くに「値引」「割引」「50%」「40%」「30%」などの行がある場合は、別明細に分けず、直前の商品明細の discount に入れてください。
-- unitPrice は値引き前の商品単価、totalPrice は unitPrice * quantity - discount の値を入れてください。
-- 例: 商品 980 円、50% 値引 -490 円の場合は unitPrice=980, discount=490, totalPrice=490。
+- unitPrice は taxFlag に対応する値引き前の商品単価、totalPrice は値引き後の税込明細金額を入れてください。
+- 各明細は税抜・税込の両方を返してください。taxExcludedUnitPrice / taxExcludedTotalPrice は税抜、taxIncludedUnitPrice / taxIncludedTotalPrice は税込です。
+- レシートに片方しか印字されていない場合は、taxRate を使ってもう片方を計算してください。金額は1円単位で四捨五入してください。
+- taxFlag が "0" の場合は unitPrice に税抜単価、taxFlag が "1" の場合は unitPrice に税込単価を入れてください。totalPrice は税込明細金額を入れてください。
+- taxExcludedTotalPrice は税抜単価 × 数量 - 税抜値引額、taxIncludedTotalPrice は税込単価 × 数量 - 税込値引額を基本にしてください。
 - レジ袋は商品明細として残し、日用品に分類してください。
 - 商品名はレシート上の省略語、カナ、英数字を補完し、何を買ったか分かる自然な名前にしてください。
 - ブランド名、容量、味、種類、部位、個数などが読める場合は itemName に含めてください。読めない内容は推測しすぎないでください。
@@ -281,7 +291,11 @@ category1 には「■」の分類名、category2 にはその下の項目名を
         "quantity": 1,
         "unitPrice": 0,
         "discount": 0,
-        "totalPrice": 0
+        "totalPrice": 0,
+        "taxExcludedUnitPrice": 0,
+        "taxExcludedTotalPrice": 0,
+        "taxIncludedUnitPrice": 0,
+        "taxIncludedTotalPrice": 0
       }}
     ]
   }}
@@ -307,6 +321,7 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 【変換ルール】
 - 入力JSONの receiptInfo 構造を保ったまま返してください。
 - 商品名、数量、単価、値引、明細金額、合計金額、日付、時刻、店舗名、登録番号は変更しないでください。
+- taxExcludedUnitPrice / taxExcludedTotalPrice / taxIncludedUnitPrice / taxIncludedTotalPrice も変更しないでください。
 - 変更してよい項目は receiptDetails の category1/category2/taxRate だけです。
 - 入力明細に belcCategoryCode / belcCategoryName がある場合、それはベルク側の商品分類です。分類判断の参考にしてください。
 - belcCategoryCode / belcCategoryName を category1/category2 にそのまま入れることは禁止です。最終分類は必ず分類一覧から選んでください。
@@ -334,7 +349,11 @@ category1 には「■」の分類名、category2 にはその下の項目名を
         "quantity": 1,
         "unitPrice": 0,
         "discount": 0,
-        "totalPrice": 0
+        "totalPrice": 0,
+        "taxExcludedUnitPrice": 0,
+        "taxExcludedTotalPrice": 0,
+        "taxIncludedUnitPrice": 0,
+        "taxIncludedTotalPrice": 0
       }}
     ]
   }}
@@ -546,8 +565,20 @@ class GeminiReceiptAnalyzer:
                 "unitPrice": unit_price,
                 "discount": to_int(item.get("discount")),
                 "totalPrice": total_price,
+                "taxExcludedUnitPrice": optional_int(item.get("taxExcludedUnitPrice")),
+                "taxExcludedTotalPrice": optional_int(item.get("taxExcludedTotalPrice")),
+                "taxIncludedUnitPrice": optional_int(item.get("taxIncludedUnitPrice")),
+                "taxIncludedTotalPrice": optional_int(item.get("taxIncludedTotalPrice")),
             }
-            normalized_detail.update(enrich_detail_prices(normalized_detail, tax_flag))
+            prices = enrich_detail_prices(normalized_detail, tax_flag)
+            normalized_detail.update(prices)
+            # フォームの単価は税区分に合わせ、明細合計は常に税込で表示する。
+            normalized_detail["unitPrice"] = (
+                prices["taxExcludedUnitPrice"]
+                if tax_flag == "0"
+                else prices["taxIncludedUnitPrice"]
+            )
+            normalized_detail["totalPrice"] = prices["taxIncludedTotalPrice"]
             details.append(normalized_detail)
 
         total_price = to_int(

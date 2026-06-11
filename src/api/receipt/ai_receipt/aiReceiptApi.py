@@ -6,7 +6,15 @@ import json
 import uuid
 
 from src.api.receipt.ai_receipt.receiptAnalyzer import GeminiReceiptAnalyzer
-from src.api.utils import int_token, json_response, service_body, now_ymd_hms
+from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
+from src.api.utils import (
+    int_token,
+    json_response,
+    normalize_invoice_number,
+    normalize_tax_flag,
+    service_body,
+    now_ymd_hms,
+)
 from src.common.base import BaseRestApi
 
 
@@ -27,6 +35,7 @@ class AiReceiptApi(BaseRestApi):
         self.api_key = api_key
         self.gemini_api_key = gemini_api_key
         self.gemini_model = gemini_model
+        self.logo_storage = SupplierLogoStorage()
         self.analyzer = analyzer or GeminiReceiptAnalyzer(
             api_key=gemini_api_key,
             model=gemini_model,
@@ -77,6 +86,7 @@ class AiReceiptApi(BaseRestApi):
             self.record_usage(parsed, status_code, user_id)
             response_body = service_body(parsed)
             if isinstance(response_body, dict):
+                response_body = self.apply_registered_supplier(response_body, user_id)
                 analysis_id = self.create_history(
                     user_id=user_id,
                     image_base64=image_base64,
@@ -89,6 +99,53 @@ class AiReceiptApi(BaseRestApi):
 
         except Exception as e:
             return json_response(500, {"errorMessage": str(e)})
+
+    def apply_registered_supplier(self, ai_output, user_id):
+        """AI結果の登録番号が場所マスタに存在する場合、DBの店舗情報を優先する。"""
+        receipt = ai_output.get("receiptInfo") or ai_output.get("receipt")
+        if not isinstance(receipt, dict):
+            return ai_output
+
+        invoice_number = normalize_invoice_number(receipt.get("invoiceRegistrationNumber"))
+        if not invoice_number:
+            return ai_output
+
+        rows = self.database.select(
+            """
+            SELECT INV_REG_NUM, SUP_NAME, TAX_FLAG
+            FROM invoice_registration
+            WHERE INV_REG_NUM = %(INV_REG_NUM)s
+              AND CRE_USER_ID = %(USER_ID)s
+              AND DEL_FLAG = 0
+            LIMIT 1
+            """,
+            {"INV_REG_NUM": invoice_number, "USER_ID": user_id},
+        )
+        if not rows:
+            return ai_output
+
+        row = rows[0]
+        tax_flag = str(normalize_tax_flag(row.get("TAX_FLAG", row.get("taxFlag"))))
+        receipt["invoiceRegistrationNumber"] = invoice_number
+        receipt["supplierName"] = row.get("SUP_NAME") or row.get("supplierName") or receipt.get("supplierName") or ""
+        receipt["taxFlag"] = tax_flag
+
+        supplier_image = self.logo_storage.url_for(invoice_number)
+        if supplier_image:
+            receipt["supplierImage"] = supplier_image
+
+        # DBの税区分に合わせてフォーム表示用単価を選ぶ。税込合計は常に税込値を使う。
+        for detail in receipt.get("receiptDetails") or []:
+            if not isinstance(detail, dict):
+                continue
+            if tax_flag == "0" and detail.get("taxExcludedUnitPrice") is not None:
+                detail["unitPrice"] = detail["taxExcludedUnitPrice"]
+            elif tax_flag == "1" and detail.get("taxIncludedUnitPrice") is not None:
+                detail["unitPrice"] = detail["taxIncludedUnitPrice"]
+            if detail.get("taxIncludedTotalPrice") is not None:
+                detail["totalPrice"] = detail["taxIncludedTotalPrice"]
+
+        return ai_output
 
     def create_history(self, user_id, image_base64, image_mime_type, ai_output):
         """AI解析結果と送信画像を ai_receipt_analysis に保存する。"""
