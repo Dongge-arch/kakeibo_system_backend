@@ -81,6 +81,18 @@ Globals:
       - !Ref HomeKakeiboLayerArn
 
 Resources:
+  ReceiptExportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-receipt-export
+      Handler: lambda_api.receipt_export.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /export/receipt/file
+            Method: POST
   ReceiptRegistrationFunction:
     Type: AWS::Serverless::Function
     Properties:

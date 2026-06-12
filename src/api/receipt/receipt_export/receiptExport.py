@@ -5,6 +5,7 @@
 import io
 import os
 import uuid
+import base64
 from datetime import datetime
 from urllib.parse import quote
 
@@ -35,6 +36,35 @@ class ReceiptExportService:
             "createdAt": datetime.now(),
         }
         return {"statusCode": 200, "body": {"url": f"/export/receipt/page/{token}"}}
+
+    def prepare_file(self, request):
+        """Generate the requested file without relying on Lambda memory."""
+        export_type = self.text((request or {}).get("type")).lower()
+        if export_type not in ("excel", "pdf"):
+            return {"statusCode": 400, "body": {"errorMessage": "出力形式が不正です。"}}
+
+        rows = self.normalize_rows((request or {}).get("rows") or [])
+        if not rows:
+            return {"statusCode": 400, "body": {"errorMessage": "出力対象のデータがありません。"}}
+
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if export_type == "excel":
+            content = self.build_excel(rows)
+            filename = f"レシート検索結果_{now}.xlsx"
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            content = self.build_pdf(rows)
+            filename = f"レシート検索結果_{now}.pdf"
+            media_type = "application/pdf"
+
+        return {
+            "statusCode": 200,
+            "body": {
+                "filename": filename,
+                "mediaType": media_type,
+                "contentBase64": base64.b64encode(content).decode("ascii"),
+            },
+        }
 
     def page_html(self, token):
         """ブラウザでダウンロードを開始するための中間HTMLを作成する。"""
@@ -278,7 +308,7 @@ class ReceiptExportService:
         y = 596
         for category, amount in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:10]:
             self.pdf_text(commands, 48, y, self.truncate(category, 22), 10, color="111827")
-            self.pdf_text(commands, 372, y, self.format_yen(amount), 10, color="111827")
+            self.pdf_text(commands, 200, y, self.format_yen(amount), 10, color="111827")
             width = 150 * (amount / max(total, 1))
             self.pdf_rect(commands, 48, y - 13, 150, 5, fill="E2E8F0")
             self.pdf_rect(commands, 48, y - 13, max(width, 4), 5, fill="2563EB")
@@ -299,10 +329,10 @@ class ReceiptExportService:
         self.pdf_text(commands, 36, 800, "明細一覧", 17, color="17324D")
         self.pdf_text(commands, 452, 800, f"{offset + 1}-{offset + len(rows)} / {total_count}", 9, color="64748B")
         columns = [
-            ("日付", 48, 56),
-            ("時間", 112, 34),
-            ("店舗", 154, 102),
-            ("種類", 266, 190),
+            ("日付", 48, 70),
+            ("時間", 124, 38),
+            ("店舗", 168, 132),
+            ("種類", 306, 156),
             ("金額", 486, 62),
         ]
         self.pdf_rect(commands, 36, 764, 523, 24, fill="EFF6FF", stroke="D8E1EA")
@@ -336,7 +366,15 @@ class ReceiptExportService:
 
     def pdf_text(self, commands, x, y, text, size=10, color="111827"):
         r, g, b = self.pdf_color(color)
-        commands.append(f"BT /F1 {size} Tf {r:.3f} {g:.3f} {b:.3f} rg 1 0 0 1 {x} {y} Tm {self.pdf_hex(text)} Tj ET")
+        cursor = x
+        for value, is_ascii in self.pdf_text_runs(text):
+            font = "FL" if is_ascii else "FJ"
+            encoded = self.pdf_literal(value) if is_ascii else self.pdf_hex(value)
+            commands.append(
+                f"BT /{font} {size} Tf {r:.3f} {g:.3f} {b:.3f} rg "
+                f"1 0 0 1 {cursor:.2f} {y} Tm {encoded} Tj ET"
+            )
+            cursor += self.pdf_text_width(value, size)
 
     def pdf_rect(self, commands, x, y, width, height, fill=None, stroke=None):
         if fill:
@@ -360,7 +398,13 @@ class ReceiptExportService:
             b"<< /Type /Catalog /Pages 2 0 R >>",
             b"",
             b"<< /Type /Font /Subtype /Type0 /BaseFont /HeiseiKakuGo-W5 /Encoding /UniJIS-UCS2-H /DescendantFonts [4 0 R] >>",
-            b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /HeiseiKakuGo-W5 /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /DW 1000 >>",
+            b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /HeiseiKakuGo-W5 "
+            b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> "
+            b"/FontDescriptor 6 0 R /DW 1000 >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Type /FontDescriptor /FontName /HeiseiKakuGo-W5 /Flags 4 "
+            b"/FontBBox [-92 -250 1010 922] /ItalicAngle 0 /Ascent 880 "
+            b"/Descent -120 /CapHeight 737 /StemV 80 >>",
         ]
         page_refs = []
         for page in page_streams:
@@ -370,7 +414,8 @@ class ReceiptExportService:
             page_ref = len(objects) + 1
             page_refs.append(page_ref)
             objects.append(
-                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Resources << /Font << /F1 3 0 R >> >> /Contents {content_ref} 0 R >>".encode("ascii")
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] "
+                f"/Resources << /Font << /FJ 3 0 R /FL 5 0 R >> >> /Contents {content_ref} 0 R >>".encode("ascii")
             )
         kids = " ".join(f"{ref} 0 R" for ref in page_refs)
         objects[1] = f"<< /Type /Pages /Kids [{kids}] /Count {len(page_refs)} >>".encode("ascii")
@@ -426,6 +471,25 @@ class ReceiptExportService:
             width += size * (0.55 if ord(char) < 128 else 1.0)
         return width
 
+    def pdf_text_runs(self, value):
+        """Split mixed Japanese/ASCII text so each script uses a suitable font."""
+        text = self.text(value)
+        if not text:
+            return []
+        runs = []
+        current = text[0]
+        current_ascii = ord(text[0]) < 128
+        for char in text[1:]:
+            is_ascii = ord(char) < 128
+            if is_ascii == current_ascii:
+                current += char
+            else:
+                runs.append((current, current_ascii))
+                current = char
+                current_ascii = is_ascii
+        runs.append((current, current_ascii))
+        return runs
+
     def summary(self, rows):
         """出力用データから総額、分類別、月別の集計を作る。"""
         total = sum(self.number(row.get("totalPrice")) for row in rows)
@@ -441,6 +505,11 @@ class ReceiptExportService:
     def pdf_hex(self, text):
         """PDFの日本語文字列として埋め込める16進文字列へ変換する。"""
         return "<" + self.text(text).encode("utf-16-be").hex().upper() + ">"
+
+    def pdf_literal(self, text):
+        """Escape an ASCII string for a PDF literal string."""
+        value = self.text(text).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        return f"({value})"
 
     def text(self, value):
         """Noneを空文字に寄せて出力用文字列へ変換する。"""
