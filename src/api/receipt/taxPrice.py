@@ -57,37 +57,26 @@ def enrich_detail_prices(detail: dict, tax_flag) -> dict:
     discount = to_number(detail.get("discount"))
     base_total = max(0, display_unit * quantity - discount)
 
-    tax_excluded_unit = detail.get("taxExcludedUnitPrice")
-    tax_excluded_total = detail.get("taxExcludedTotalPrice")
-    tax_included_unit = detail.get("taxIncludedUnitPrice")
-    tax_included_total = detail.get("taxIncludedTotalPrice")
-
-    if tax_excluded_unit in (None, ""):
-        if is_tax_excluded:
-            tax_excluded_unit = display_unit
-        else:
-            tax_excluded_unit = round_price(display_unit / tax_multiplier) if display_unit else 0
-
-    if tax_excluded_total in (None, ""):
-        if is_tax_excluded:
-            # 税抜入力では、画面表示用の税込合計ではなく入力値から税抜合計を復元する。
-            tax_excluded_total = base_total if base_total else (
-                round_price(display_total / tax_multiplier) if display_total else 0
-            )
-        else:
-            tax_excluded_total = round_price(display_total / tax_multiplier) if display_total else 0
-
-    if tax_included_unit in (None, ""):
-        if is_tax_excluded:
-            tax_included_unit = round_price(to_number(tax_excluded_unit) * tax_multiplier)
-        else:
-            tax_included_unit = display_unit
-
-    if tax_included_total in (None, ""):
-        if is_tax_excluded:
-            tax_included_total = round_price(to_number(tax_excluded_total) * tax_multiplier)
-        else:
-            tax_included_total = display_total
+    if is_tax_excluded:
+        tax_excluded_unit = display_unit
+        tax_included_unit = round_price(display_unit * tax_multiplier)
+        # totalPrice is the final tax-included amount. This also preserves a
+        # manually entered total instead of recalculating it from unit price.
+        tax_included_total = display_total or round_price(base_total * tax_multiplier)
+        tax_excluded_total = (
+            round_price(tax_included_total / tax_multiplier)
+            if tax_included_total
+            else base_total
+        )
+    else:
+        tax_included_unit = display_unit
+        tax_included_total = display_total or base_total
+        tax_excluded_unit = round_price(display_unit / tax_multiplier) if display_unit else 0
+        tax_excluded_total = (
+            round_price(tax_included_total / tax_multiplier)
+            if tax_included_total
+            else 0
+        )
 
     # 画面表示と家計簿集計では税込価格に統一する。
     display_unit = to_number(tax_included_unit)

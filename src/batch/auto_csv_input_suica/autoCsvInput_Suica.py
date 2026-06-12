@@ -150,7 +150,7 @@ class AutoCsvInput_Suica(BaseBatch):
             history_soup = BeautifulSoup(history_response.content, "html.parser")
             rows = self.parse_history(history_soup)
             inserted_count = self.save_history_rows(rows, user_id)
-            registered_count = self.register_pending_expenses(user_id)
+            registered_count, _registration_duplicate_count = self.register_pending_expenses(user_id)
         except Exception as error:
             self.logger.warning("Suica利用履歴の取得に失敗しました: %s", error)
             return {
@@ -160,6 +160,7 @@ class AutoCsvInput_Suica(BaseBatch):
                 "fetchedCount": 0,
                 "insertedCount": 0,
                 "duplicateCount": 0,
+                "registeredCount": 0,
             }
 
         return {
@@ -322,18 +323,31 @@ class AutoCsvInput_Suica(BaseBatch):
             source_key = hashlib.sha256(content.encode("utf-8")).hexdigest()
             existing = self.database.select(
                 """
-                SELECT id FROM auto_csv_input_cont
+                SELECT id FROM kakeibo.auto_csv_input_cont
                 WHERE CRE_USER_ID = %(USER_ID)s AND CONNECTION_TYPE = 'SUICA'
-                  AND SOURCE_KEY = %(SOURCE_KEY)s AND DEL_FLAG = 0
+                  AND DEL_FLAG = 0
+                  AND (
+                    SOURCE_KEY = %(SOURCE_KEY)s
+                    OR (
+                      (SOURCE_KEY IS NULL OR SOURCE_KEY = '')
+                      AND RET_DT = %(RET_DT)s
+                      AND RET_CONT = %(RET_CONT)s
+                    )
+                  )
                 LIMIT 1
                 """,
-                {"USER_ID": user_id, "SOURCE_KEY": source_key},
+                {
+                    "USER_ID": user_id,
+                    "SOURCE_KEY": source_key,
+                    "RET_DT": row["date"].replace("-", ""),
+                    "RET_CONT": content,
+                },
             )
             if existing:
                 continue
             self.database.insert(
                 """
-                INSERT INTO auto_csv_input_cont (
+                INSERT INTO kakeibo.auto_csv_input_cont (
                     CRE_PROG, UPD_PROG, INV_REG_NUM, RET_CONT, RET_DT, RET_TM,
                     AUTO_INPUT_STATUS, CONNECTION_TYPE, SOURCE_KEY,
                     CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
@@ -359,16 +373,17 @@ class AutoCsvInput_Suica(BaseBatch):
         rows = self.database.select(
             """
             SELECT id, RET_CONT
-            FROM auto_csv_input_cont
+            FROM kakeibo.auto_csv_input_cont
             WHERE CRE_USER_ID = %(USER_ID)s
               AND CONNECTION_TYPE = 'SUICA'
-              AND AUTO_INPUT_STATUS = 'FETCHED'
+              AND COALESCE(AUTO_INPUT_STATUS, '') IN ('', 'FETCHED')
               AND DEL_FLAG = 0
             ORDER BY id
             """,
             {"USER_ID": user_id},
         )
         registered_count = 0
+        duplicate_count = 0
         grouped = {}
         for staging_row in rows:
             history = json.loads(self.value(staging_row, "RET_CONT", "ret_cont") or "{}")
@@ -381,6 +396,9 @@ class AutoCsvInput_Suica(BaseBatch):
             else:
                 group_key = (history["date"], "TRANSPORT", "")
             grouped.setdefault(group_key, []).append((staging_row, history))
+
+        if not grouped:
+            return registered_count, duplicate_count
 
         registration_api = NewReceiptRegistration()
         for (receipt_date, group_type, _), group_rows in grouped.items():
@@ -398,81 +416,27 @@ class AutoCsvInput_Suica(BaseBatch):
                 # JR東日本ロゴは外部ストレージに依存せず、コード内のJPEGを使用する。
                 "supplierImage": "data:image/jpeg;base64," + SUICA_IMAGE,
             }
-            appended = group_type == "TRANSPORT" and self.append_to_existing_transport_receipt(
-                registration_api,
-                receipt_info,
-                user_id,
-            )
-            if not appended:
-                auth_token = set_current_user_id(user_id)
-                try:
-                    result = registration_api.call(
-                        headers={"x-kakeibo-user-id": user_id, "Content-Type": "application/json"},
-                        body={"receiptInfo": receipt_info},
-                    )
-                finally:
-                    reset_current_user_id(auth_token)
-                if int(result.get("statusCode", 500)) >= 400:
-                    raise RuntimeError(f"Suicaの出費登録に失敗しました: {result}")
+            auth_token = set_current_user_id(user_id)
+            try:
+                result = registration_api.call(
+                    headers={"x-kakeibo-user-id": user_id, "Content-Type": "application/json"},
+                    body={"receiptInfo": receipt_info},
+                )
+            finally:
+                reset_current_user_id(auth_token)
+            status_code = int(result.get("statusCode", 500))
+            result_body = result.get("body") or {}
+            if status_code == 409 and str(result_body.get("errorCode") or "") == "1000062":
+                for staging_row, _ in group_rows:
+                    self.update_auto_input_status(staging_row, user_id, "DUPLICATE")
+                    duplicate_count += 1
+                continue
+            if status_code >= 400:
+                raise RuntimeError(f"Suicaの出費登録に失敗しました: {result}")
             for staging_row, _ in group_rows:
                 self.update_auto_input_status(staging_row, user_id, "3")
                 registered_count += 1
-        return registered_count
-
-    @staticmethod
-    def append_to_existing_transport_receipt(registration_api, receipt_info, user_id):
-        receipt_date = str(receipt_info["receiptDate"]).replace("-", "")
-        rows = registration_api.database.select(
-            """
-            SELECT RET_ID
-            FROM receipt_info
-            WHERE CRE_USER_ID = %(USER_ID)s
-              AND INV_REG_NUM = 'SUICA'
-              AND SUP_NAME = 'Mobile Suica 交通'
-              AND RET_DT = %(RET_DT)s
-              AND DEL_FLAG = 0
-            ORDER BY CRE_DT, CRE_TM, RET_ID
-            LIMIT 1
-            FOR UPDATE
-            """,
-            {"USER_ID": user_id, "RET_DT": receipt_date},
-        )
-        if not rows:
-            return False
-
-        receipt_id = AutoCsvInput_Suica.value(rows[0], "RET_ID", "ret_id")
-        details = receipt_info["receiptDetails"]
-        registration_api.insert_receipt_details(
-            receipt_id=receipt_id,
-            receipt_details=details,
-            tax_flag=receipt_info.get("taxFlag"),
-            user_id=user_id,
-        )
-        ymd, hms = now_ymd_hms()
-        registration_api.database.update(
-            """
-            UPDATE receipt_info
-            SET RET_DET_CNT = COALESCE(RET_DET_CNT, 0) + %(DETAIL_COUNT)s,
-                TOA_PRICE = COALESCE(TOA_PRICE, 0) + %(TOTAL_PRICE)s,
-                UPD_PROG = 'AutoCsvInput_Suica',
-                UPD_DT = %(UPD_DT)s,
-                UPD_TM = %(UPD_TM)s,
-                UPD_USER_ID = %(USER_ID)s
-            WHERE RET_ID = %(RET_ID)s
-              AND CRE_USER_ID = %(USER_ID)s
-              AND DEL_FLAG = 0
-            """,
-            {
-                "DETAIL_COUNT": len(details),
-                "TOTAL_PRICE": receipt_info["totalPrice"],
-                "UPD_DT": ymd,
-                "UPD_TM": hms,
-                "RET_ID": receipt_id,
-                "USER_ID": user_id,
-            },
-        )
-        registration_api.database.commit()
-        return True
+        return registered_count, duplicate_count
 
     @staticmethod
     def history_to_detail(history):
@@ -546,7 +510,7 @@ class AutoCsvInput_Suica(BaseBatch):
         ymd, hms = now_ymd_hms()
         self.database.update(
             """
-            UPDATE auto_csv_input_cont
+            UPDATE kakeibo.auto_csv_input_cont
             SET AUTO_INPUT_STATUS = %(STATUS)s,
                 UPD_PROG = 'AutoCsvInput_Suica',
                 UPD_DT = %(UPD_DT)s,

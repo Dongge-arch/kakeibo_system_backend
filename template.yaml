@@ -1194,6 +1194,17 @@ Resources:
       FunctionName: home-kakeibo-auto-linkage-run
       Handler: lambda_api.auto_linkage_run.lambda_function.lambda_handler
       CodeUri: dist_lambda/function
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
       Events:
         Api:
           Type: HttpApi
