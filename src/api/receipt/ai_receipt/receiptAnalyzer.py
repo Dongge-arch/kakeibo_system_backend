@@ -231,6 +231,26 @@ def fallback_category(item_name: str, pairs: set[tuple[str, str]]) -> tuple[str,
     return ("その他", "不明支出") if ("その他", "不明支出") in pairs else ("その他", "未分類")
 
 
+NON_ITEM_NAME_PATTERN = re.compile(
+    r"^(?:"
+    r"小計|合計|総合計|お買上(?:金額|額)?|請求額|支払(?:額|金額)?|"
+    r"現金|クレジット|カード|電子マネー|預り|お預り|釣銭|おつり|"
+    r"消費税(?:等|額)?|内消費税|外税|内税|税額|"
+    r"(?:8|10)(?:\.0)?%対象(?:額)?|軽減税率対象(?:額)?|"
+    r"ガソリン税|揮発油税|地方揮発油税|"
+    r"ポイント(?:利用|付与|残高)?"
+    r")$",
+    re.IGNORECASE,
+)
+
+
+def is_non_item_detail(item_name: str) -> bool:
+    """税額、合計、支払情報などの商品ではない明細を除外する。"""
+    normalized = re.sub(r"[\s:：()（）【】\[\]＊*※]+", "", str(item_name or ""))
+    normalized = re.sub(r"[¥￥]?\d[\d,]*(?:円)?$", "", normalized)
+    return not normalized or bool(NON_ITEM_NAME_PATTERN.fullmatch(normalized))
+
+
 def build_receipt_prompt(categories: dict) -> str:
     """レシート解析用の最終プロンプトを作る。"""
     category_text = build_category_prompt(categories)
@@ -250,6 +270,9 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 {category_text}
 
 【読み取りルール】
+- あなたの担当は印字内容の読み取り、商品行の識別、分類候補の選択です。税計算の推測を優先しないでください。
+- 商品名、数量、印字単価、値引き、印字行金額をレシートに書かれた通りに読み取ってください。
+- 読めない数字を周辺の合計から無理に逆算しないでください。主要項目が読めない場合は AI_RECEIPT_UNREADABLE を返してください。
 - 店舗名（○○ ××店）(例：ローソン 秦野平沢店)、日付、時刻、登録番号が読める場合は入れてください。
 - 店舗名、日付、合計金額、明細の大部分が読めない場合は推測せず AI_RECEIPT_UNREADABLE を返してください。
 - 画像が横向き・逆向きでも、文字の向きを補正して読んでください。
@@ -271,6 +294,9 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 - ブランド名、容量、味、種類、部位、個数などが読める場合は itemName に含めてください。読めない内容は推測しすぎないでください。
 - ポイント付与、ポイント利用、ポイント残高、会員番号、支払方法、預り金、おつり、税率別対象額、消費税額は receiptDetails に入れないでください。
 - 8%対象/10%対象の税額行そのものは receiptDetails に入れないでください。税率は分類の taxRate から後続システムが計算します。
+- 小計、合計、内税、外税、消費税、ガソリン税、支払額、現金、カードの行は絶対に商品明細にしないでください。
+- taxRate は選択した category1/category2 の分類一覧に記載された値をそのまま返してください。独自判断で変更しないでください。
+- taxExcludedUnitPrice、taxExcludedTotalPrice、taxIncludedUnitPrice、taxIncludedTotalPrice は後続システムで再計算されます。印字から確定できない値は 0 にしてください。
 - 読み取った明細 totalPrice の合計に税を加えた金額が receiptInfo.totalPrice と大きく合わない場合、明細の読み落としや値引きの紐付けを見直してください。
 
 【出力形式】
@@ -531,6 +557,11 @@ class GeminiReceiptAnalyzer:
             if not isinstance(item, dict):
                 continue
 
+            item_name = str(item.get("itemName") or item.get("name") or "不明商品").strip()
+            if is_non_item_detail(item_name):
+                log.info("Ignored non-item receipt detail: %s", item_name)
+                continue
+
             total_price = to_int(
                 item.get("totalPrice")
                 if item.get("totalPrice") is not None
@@ -544,20 +575,23 @@ class GeminiReceiptAnalyzer:
             category1 = clean_category_label(item.get("category1") or item.get("category_1") or "")
             category2 = clean_category_label(item.get("category2") or item.get("category_2") or item.get("category_3") or "")
             if valid_pairs and (category1, category2) not in valid_pairs:
-                category1, category2 = fallback_category(item.get("itemName") or item.get("name"), valid_pairs)
+                category1, category2 = fallback_category(item_name, valid_pairs)
             if valid_pairs and (category1, category2) not in valid_pairs and tax_rates:
                 category1, category2 = next(iter(tax_rates.keys()))
 
-            tax_rate = normalize_tax_rate(
+            master_tax_rate = tax_rates.get((category1, category2))
+            ai_tax_rate = (
                 item.get("taxRate")
                 if item.get("taxRate") is not None
                 else item.get("tax_rate")
-                if item.get("tax_rate") is not None
-                else tax_rates.get((category1, category2), 0.1)
+            )
+            tax_rate = normalize_tax_rate(
+                master_tax_rate if master_tax_rate not in (None, "") else ai_tax_rate,
+                0.1,
             )
 
             normalized_detail = {
-                "itemName": str(item.get("itemName") or item.get("name") or "不明商品").strip(),
+                "itemName": item_name,
                 "category1": category1,
                 "category2": category2,
                 "taxRate": tax_rate,
@@ -588,6 +622,14 @@ class GeminiReceiptAnalyzer:
         )
         if not total_price:
             total_price = sum(item["totalPrice"] for item in details)
+        detail_total = sum(item["totalPrice"] for item in details)
+        if total_price and details and detail_total != total_price:
+            log.warning(
+                "Receipt total mismatch after normalization: receipt=%s, details=%s, difference=%s",
+                total_price,
+                detail_total,
+                total_price - detail_total,
+            )
 
         return {
             "receiptInfo": {
