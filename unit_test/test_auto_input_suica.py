@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from src.batch.auto_input_suica.autoInput_Suica import AutoInput_Suica
+from src.batch.autu_input_targets.auto_input_suica.autoInput_Suica import AutoInput_Suica
 
 
 def make_batch():

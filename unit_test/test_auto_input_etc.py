@@ -2,7 +2,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from src.batch.auto_input_etc.autoInput_Etc import AutoInput_Etc
+from src.batch.autu_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
 
 
 def test_parse_saved_etc_history():
@@ -41,6 +41,8 @@ def test_convert_etc_history_to_receipt():
     assert receipt["supplierName"] == "東日本高速道路株式会社"
     assert receipt["totalPrice"] == 350
     assert receipt["receiptDetails"][0]["itemName"] == "ETC高速道路料金 11:43 入口 → 11:48 出口"
+    assert receipt["receiptDetails"][0]["category1"] == "交通"
+    assert receipt["receiptDetails"][0]["category2"] == "高速道路"
 
 
 def test_group_etc_rows_by_date():

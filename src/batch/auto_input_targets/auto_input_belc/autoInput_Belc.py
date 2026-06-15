@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
 
-"""ベルク店舗HPにてCSVファイルをダウンロードし、レシート情報を自動登録するバッチクラス。"""
+"""ベルク購入履歴を取得し、未登録レシートを家計簿へ自動登録する。"""
 
 import json
 import requests
@@ -44,19 +44,25 @@ BELC_CATEGORY_NAMES = {
 
 
 class AutoInput_Belc(BaseAutoInput):
-    """ベルク店舗HPにてCSVファイルをダウンロードし、レシート情報を自動登録するバッチクラス。"""
+    """ベルクの購入履歴、明細、分類を取得してレシート登録する。"""
 
     def __init__(self, db_path=None):
+        """
+        ベルク自動入力バッチを初期化する。
+
+        Args:
+            db_path (Optional[str]): ローカル実行時に使用するDBパス。
+        """
         super().__init__(class_name=self.__class__.__name__, db_path=db_path or None)
         self._validate_headers_functions = {}
         self._validate_body_functions = {}
 
     def validate_headers(self, request_dict):
-
+        """共通ヘッダーバリデーションを実行する。"""
         return super().validate_headers(request_dict)
 
     def validate_body(self, request_dict):
-        # 既存のBaseRestApiバリデーションフローへ委譲する。
+        """共通リクエストボディバリデーションを実行する。"""
         return super().validate_body(request_dict)
 
     def main(self, request_dict: dict) -> dict:
@@ -1231,6 +1237,7 @@ class AutoInput_Belc(BaseAutoInput):
         return self.build_receipt_detail(item_name, quantity, unit_price, total_price)
 
     def pick_item_name(self, cells: list[str], headers: list[str]) -> str:
+        """表ヘッダーとセルから商品名を選択する。"""
         item_header_indexes = [
             idx for idx, header in enumerate(headers)
             if any(keyword in header for keyword in ("商品", "品名", "名称", "明細"))
@@ -1245,6 +1252,7 @@ class AutoInput_Belc(BaseAutoInput):
         return cells[0] if cells else ""
 
     def pick_total_price(self, cells: list[str], headers: list[str]) -> int:
+        """表ヘッダーとセルから税込明細金額を取得する。"""
         total_header_indexes = [
             idx for idx, header in enumerate(headers)
             if any(keyword in header for keyword in ("金額", "合計", "小計"))
@@ -1260,6 +1268,7 @@ class AutoInput_Belc(BaseAutoInput):
         return amounts[-1] if amounts else 0
 
     def pick_quantity(self, cells: list[str], headers: list[str]) -> float:
+        """表ヘッダーとセルから数量を取得する。"""
         quantity_header_indexes = [
             idx for idx, header in enumerate(headers)
             if any(keyword in header for keyword in ("数量", "点数", "個数"))
@@ -1272,6 +1281,7 @@ class AutoInput_Belc(BaseAutoInput):
         return 1
 
     def pick_unit_price(self, cells: list[str], headers: list[str], total_price: int, quantity: float) -> int:
+        """表ヘッダーとセルから単価を取得し、必要な場合は合計から補完する。"""
         unit_header_indexes = [
             idx for idx, header in enumerate(headers)
             if any(keyword in header for keyword in ("単価", "価格"))
@@ -1289,6 +1299,7 @@ class AutoInput_Belc(BaseAutoInput):
         return int(round(total_price / quantity)) if quantity else total_price
 
     def build_receipt_detail(self, item_name: str, quantity: float, unit_price: int, total_price: int) -> dict:
+        """解析済みの商品値を家計簿のレシート明細形式へ変換する。"""
         return {
             "itemName": item_name,
             "category1": "その他",
@@ -1302,6 +1313,7 @@ class AutoInput_Belc(BaseAutoInput):
         }
 
     def parse_amount(self, value) -> int:
+        """通貨記号や桁区切りを含む金額文字列を非負整数へ変換する。"""
         raw = str(value or "").strip()
         match = re.search(r"-?[0-9][0-9,]*", raw)
         if not match:
@@ -1309,6 +1321,7 @@ class AutoInput_Belc(BaseAutoInput):
         return abs(int(match.group(0).replace(",", "")))
 
     def parse_signed_amount(self, value) -> int:
+        """符号付き金額文字列を整数へ変換する。"""
         raw = str(value or "").strip()
         match = re.search(r"-?[0-9][0-9,]*", raw)
         if not match:
@@ -1316,6 +1329,7 @@ class AutoInput_Belc(BaseAutoInput):
         return int(match.group(0).replace(",", ""))
 
     def parse_quantity(self, value) -> float:
+        """数量文字列を浮動小数へ変換する。"""
         raw = str(value or "").strip()
         match = re.search(r"\d+(?:\.\d+)?", raw)
         if not match:
@@ -1323,13 +1337,16 @@ class AutoInput_Belc(BaseAutoInput):
         return float(match.group(0))
 
     def clean_cell_text(self, value: str) -> str:
+        """表セル内の空白と改行を正規化する。"""
         return " ".join(str(value or "").replace("\u3000", " ").split())
 
     def is_header_row(self, cells: list[str]) -> bool:
+        """セル配列が商品表のヘッダー行か判定する。"""
         joined = " ".join(cells)
         return bool(cells) and any(keyword in joined for keyword in ("商品", "品名", "数量", "単価", "金額")) and not any(self.parse_amount(cell) for cell in cells)
 
     def is_summary_row(self, cells: list[str]) -> bool:
+        """セル配列が小計、税額、合計などの集計行か判定する。"""
         joined = " ".join(cells)
         return any(keyword in joined for keyword in (
             "合計", "小計", "総計", "消費税", "税額", "対象", "ポイント",

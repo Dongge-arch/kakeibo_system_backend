@@ -81,6 +81,34 @@ Globals:
       - !Ref HomeKakeiboLayerArn
 
 Resources:
+  AutoInputScheduledFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-auto-input-scheduled
+      Handler: lambda_batch.auto_input.lambda_function.lambda_handler
+      CodeUri: dist_lambda/function
+      Timeout: 900
+      MemorySize: 1024
+      Policies:
+        - !If
+          - HasSupplierLogoBucket
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+          - !Ref AWS::NoValue
+      Events:
+        DailyAutoInput:
+          Type: Schedule
+          Properties:
+            Name: home-kakeibo-auto-input-daily
+            Description: Run enabled BELC and ETC automatic imports every day.
+            Schedule: cron(0 15 * * ? *)
+            Enabled: true
+
   ReceiptExportFunction:
     Type: AWS::Serverless::Function
     Properties:

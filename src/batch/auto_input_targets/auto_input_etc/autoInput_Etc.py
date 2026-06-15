@@ -383,7 +383,7 @@ class AutoInput_Etc(BaseAutoInput):
         amount = abs(int(row["amount"]))
         return {
             "itemName": item_name,
-            "category1": "交通費",
+            "category1": "交通",
             "category2": "高速道路",
             "taxRate": 0.10,
             "quantity": 1,

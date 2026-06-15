@@ -7,9 +7,9 @@ from src.api.utils import now_ymd_hms
 from src.common.base import BaseRestApi
 from src.common.exception.error import Error
 from src.common.functions.response import response
-from src.batch.auto_input_belc.autoInput_Belc import AutoInput_Belc
-from src.batch.auto_input_suica.autoInput_Suica import AutoInput_Suica
-from src.batch.auto_input_etc.autoInput_Etc import AutoInput_Etc
+from src.batch.auto_input_targets.auto_input_belc.autoInput_Belc import AutoInput_Belc
+from src.batch.auto_input_targets.auto_input_suica.autoInput_Suica import AutoInput_Suica
+from src.batch.auto_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
 
 
 SUPPORTED_PLACES = (

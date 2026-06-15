@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 
-"""Human-in-the-loop Mobile Suica login for the web application."""
+"""画像認証付きMobile Suica利用履歴を家計簿へ取り込む。"""
 
 import base64
 import hashlib
@@ -26,17 +26,21 @@ SUICA_IMAGE = "/9j/4AAQSkZJRgABAQAAAQABAAD/4QAqRXhpZgAASUkqAAgAAAABADEBAgAHAAAAG
 
 class AutoInput_Suica(BaseAutoInput):
     def __init__(self, db_path=None):
+        """Mobile Suica自動入力バッチを初期化する。"""
         super().__init__(class_name=self.__class__.__name__, db_path=db_path or None)
         self._validate_headers_functions = {}
         self._validate_body_functions = {}
 
     def validate_headers(self, request_dict):
+        """共通ヘッダーバリデーションを実行する。"""
         return super().validate_headers(request_dict)
 
     def validate_body(self, request_dict):
+        """共通リクエストボディバリデーションを実行する。"""
         return super().validate_body(request_dict)
 
     def main(self, request_dict):
+        """開始または画像認証送信アクションを振り分ける。"""
         user_id = self.require_user_id(request_dict)
         body = request_dict.get("body") or {}
         config = self.get_config(user_id)
@@ -54,6 +58,7 @@ class AutoInput_Suica(BaseAutoInput):
         return {"statusCode": 200, "body": self.start_login(config, user_id)}
 
     def start_login(self, config, user_id):
+        """ログイン画面と画像認証を取得し、継続用セッションを保存する。"""
         session = self.new_session()
         response = session.get(SUICA_LOGIN_URL, timeout=30)
         response.raise_for_status()
@@ -92,6 +97,7 @@ class AutoInput_Suica(BaseAutoInput):
         }
 
     def submit_login(self, config, user_id, body):
+        """画像認証を送信し、利用履歴の取得と登録を実行する。"""
         challenge_id = str(body.get("challengeId") or "")
         captcha = str(body.get("captcha") or "").strip()
         if not challenge_id or not captcha:
@@ -174,6 +180,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def is_login_success(soup):
+        """レスポンスHTMLがログイン済み画面か判定する。"""
         title = soup.title.get_text(" ", strip=True) if soup.title else ""
         return bool(
             "会員メニュー" in title
@@ -183,6 +190,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def login_error_message(soup):
+        """ログイン画面からユーザー向けエラーメッセージを抽出する。"""
         for selector in ("#msg", ".error", ".errorMessage", ".validation-summary-errors"):
             element = soup.select_one(selector)
             if element:
@@ -195,6 +203,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def extract_history_url(soup, base_url):
+        """ログイン後画面から利用履歴ページURLを取得する。"""
         link = soup.select_one("#btn_sfHistory a[href]")
         href = link.get("href", "") if link else ""
         match = re.search(r"StartApplication\(['\"]([^'\"]+)['\"]\)", href)
@@ -205,6 +214,7 @@ class AutoInput_Suica(BaseAutoInput):
         return ""
 
     def follow_auto_submit_forms(self, session, response, max_steps=5):
+        """自動送信フォームを追跡して最終画面まで遷移する。"""
         for step in range(max_steps):
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
@@ -283,6 +293,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def parse_history(soup):
+        """利用履歴HTMLを日付、場所、金額を持つ明細へ変換する。"""
         title = soup.title.get_text(" ", strip=True) if soup.title else ""
         table = soup.select_one("td.historyTable table")
         if "SF（電子マネー）利用履歴" not in title and not table:
@@ -315,6 +326,7 @@ class AutoInput_Suica(BaseAutoInput):
         return rows
 
     def save_history_rows(self, rows, user_id):
+        """未保存のSuica履歴を自動入力管理テーブルへ一時保存する。"""
         inserted_count = 0
         ymd, hms = now_ymd_hms()
         for row in rows:
@@ -369,6 +381,7 @@ class AutoInput_Suica(BaseAutoInput):
         return inserted_count
 
     def register_pending_expenses(self, user_id):
+        """一時保存済みの支出履歴を日単位でレシート登録する。"""
         rows = self.database.select(
             """
             SELECT id, RET_CONT
@@ -439,6 +452,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def history_to_detail(history):
+        """Suica利用履歴1件を家計簿のレシート明細へ変換する。"""
         entry_type = str(history.get("entryType") or "")
         entry_place = AutoInput_Suica.normalize_suica_place(history.get("entryPlace"))
         exit_place = AutoInput_Suica.normalize_suica_place(history.get("exitPlace"))
@@ -470,6 +484,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def normalize_suica_place(value):
+        """Suica履歴の駅名・店舗名表記を正規化する。"""
         place = str(value or "").strip()
         prefixes = {
             "小": "小田急",
@@ -506,6 +521,7 @@ class AutoInput_Suica(BaseAutoInput):
         return place.replace("\u3000", " ").strip()
 
     def update_auto_input_status(self, staging_row, user_id, status):
+        """一時保存した履歴の処理状態を更新する。"""
         ymd, hms = now_ymd_hms()
         self.database.update(
             """
@@ -531,6 +547,7 @@ class AutoInput_Suica(BaseAutoInput):
         return super().new_session(USER_AGENT)
     @staticmethod
     def serialize_cookies(cookie_jar):
+        """HTTP CookieJarをDB保存可能な辞書配列へ変換する。"""
         return [
             {
                 "name": cookie.name,
@@ -546,6 +563,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def restore_cookies(session, cookies):
+        """保存済みCookieをHTTPセッションへ復元する。"""
         # Backward compatibility for challenges created before full CookieJar
         # serialization was introduced.
         if isinstance(cookies, dict):
@@ -564,6 +582,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def captcha_editor_state(captcha):
+        """画像認証入力欄へ返す状態値を生成する。"""
         editor_value = "01" + captcha
         return (
             f"|0|{editor_value}||"
@@ -572,6 +591,7 @@ class AutoInput_Suica(BaseAutoInput):
 
 
     def save_challenge(self, config, user_id, challenge_id, expires_at, action_url, cookies, fields):
+        """画像認証の継続に必要なフォームとCookieを設定テーブルへ保存する。"""
         self.database.update(
             """
             UPDATE auto_input_info SET
@@ -595,6 +615,7 @@ class AutoInput_Suica(BaseAutoInput):
         )
 
     def save_authenticated_session(self, config, user_id, cookies):
+        """認証成功後のCookieとログイン状態を保存する。"""
         ymd, hms = now_ymd_hms()
         self.database.update(
             """
@@ -619,6 +640,7 @@ class AutoInput_Suica(BaseAutoInput):
         )
 
     def update_status(self, config, user_id, status):
+        """Mobile Suica設定の最終ログイン状態を更新する。"""
         self.database.update(
             "UPDATE auto_input_info SET LAST_LOGIN_STATUS = %(STATUS)s WHERE id = %(id)s AND CRE_USER_ID = %(USER_ID)s",
             {"STATUS": status, "id": self.value(config, "id", "ID"), "USER_ID": user_id},
@@ -643,6 +665,7 @@ class AutoInput_Suica(BaseAutoInput):
 
     @staticmethod
     def value(row, *keys):
+        """辞書から大文字小文字を区別せず候補キーの値を取得する。"""
         lower = {str(key).lower(): value for key, value in (row or {}).items()}
         for key in keys:
             if key in (row or {}):
