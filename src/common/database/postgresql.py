@@ -110,7 +110,6 @@ class Postgresql(Base):
 
         self._sql_cache = {}
         self.connector = self.connect_with_retry(connect, database_url, dict_row)
-        self.logger.info("DB TYPE: postgresql")
 
         if initialize_schema:
             self.initialize_schema_once(database_url)
@@ -148,6 +147,7 @@ class Postgresql(Base):
     def select(self, sql: str, params: Optional[Any] = None) -> List[Dict]:
         result = self.do_sql_with_retry(sql, params)
         rows = result.fetchall()
+        self.logger.info("select 実行しました。")
         return [PostgresqlRow(dict(row)) for row in rows]
 
     def execute(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
@@ -156,10 +156,12 @@ class Postgresql(Base):
 
     def insert(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
         result = self.do_sql_with_retry(sql, params)
+        self.logger.info("insert 実行しました。")
         return self.extract_rowcount(result)
 
     def update(self, sql: str, params: Optional[Dict[str, Any]] = None) -> int:
         result = self.do_sql_with_retry(sql, params)
+        self.logger.info("update 実行しました。")
         return self.extract_rowcount(result)
 
     def execute_many(self, sql: str, params_list: List[Dict[str, Any]]) -> int:
@@ -172,13 +174,13 @@ class Postgresql(Base):
     def commit(self):
         try:
             self.connector.commit()
-            self.logger.info("commit completed")
+            self.logger.info("コミット完了")
         except Exception:
             pass
 
     def rollback(self):
         self.connector.rollback()
-        self.logger.info("rollback completed")
+        self.logger.info("ロールバック完了")
 
     def extract_rowcount(self, result: Any) -> int:
         if isinstance(result, dict):

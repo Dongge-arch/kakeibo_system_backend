@@ -1,11 +1,11 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from src.batch.auto_csv_input_suica.autoCsvInput_Suica import AutoCsvInput_Suica
+from src.batch.auto_input_suica.autoInput_Suica import AutoInput_Suica
 
 
 def make_batch():
-    batch = AutoCsvInput_Suica.__new__(AutoCsvInput_Suica)
+    batch = AutoInput_Suica.__new__(AutoInput_Suica)
     batch.database = MagicMock()
     batch.logger = MagicMock()
     return batch
@@ -57,7 +57,7 @@ def test_duplicate_receipt_marks_staging_rows_and_continues():
 
     with (
         patch(
-            "src.batch.auto_csv_input_suica.autoCsvInput_Suica.NewReceiptRegistration",
+            "src.batch.auto_input_suica.autoInput_Suica.NewReceiptRegistration",
             return_value=registration_api,
         ),
     ):

@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS kakeibo.recurring_expense (
     CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS kakeibo.auto_csv_input_info (
+CREATE TABLE IF NOT EXISTS kakeibo.auto_input_info (
     id BIGSERIAL PRIMARY KEY,
     CRE_PROG TEXT,
     UPD_PROG TEXT,
@@ -327,7 +327,7 @@ CREATE TABLE IF NOT EXISTS kakeibo.auto_csv_input_info (
     CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS kakeibo.auto_csv_input_cont (
+CREATE TABLE IF NOT EXISTS kakeibo.auto_input_cont (
     id BIGSERIAL PRIMARY KEY,
     CRE_PROG TEXT,
     UPD_PROG TEXT,

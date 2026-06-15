@@ -1,4 +1,4 @@
-UPDATE auto_csv_input_info
+UPDATE auto_input_info
 SET UPD_PROG = 'AutoLinkageApi',
     SUP_NAME = %(SUP_NAME)s,
     INV_REG_NUM = %(INV_REG_NUM)s,

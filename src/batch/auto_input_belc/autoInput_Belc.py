@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin
-from src.common.base.base_batch import BaseBatch
+from src.common.base.base_auto_input import BaseAutoInput
 from src.common.functions.response import response
 from src.common.auth_context import reset_current_user_id, set_current_user_id
 from src.common.exception import Error
@@ -43,7 +43,7 @@ BELC_CATEGORY_NAMES = {
 }
 
 
-class AutoCsvInput_Belc(BaseBatch):
+class AutoInput_Belc(BaseAutoInput):
     """ベルク店舗HPにてCSVファイルをダウンロードし、レシート情報を自動登録するバッチクラス。"""
 
     def __init__(self, db_path=None):
@@ -73,7 +73,7 @@ class AutoCsvInput_Belc(BaseBatch):
 
         request_info = self.get_request_info(user_id)
         if not request_info:
-            raise RuntimeError("auto_csv_input_info configuration not found")
+            raise RuntimeError("auto_input_info configuration not found")
 
         history_URL = request_info.get("page_url_1")
         login_page_URL = request_info.get("page_url_2")
@@ -245,68 +245,17 @@ class AutoCsvInput_Belc(BaseBatch):
         })
 
     def request_belc(self, session, method: str, url: str, operation_name: str, **kwargs):
-        """
-        BelcサイトへのHTTP通信を実行し、一時的な障害の場合だけ再試行する。
-        """
-        kwargs.setdefault("timeout", 20)
-        last_error = None
-
-        for attempt in range(1, BELC_REQUEST_RETRY_COUNT + 1):
-            try:
-                result = session.request(method=method, url=url, **kwargs)
-                if result.status_code not in BELC_RETRY_STATUS_CODES:
-                    result.raise_for_status()
-                    return result
-
-                last_error = requests.HTTPError(
-                    f"{result.status_code} Server Error for url: {url}",
-                    response=result,
-                )
-                # Lambda側だけ失敗する場合に、WAF・ロードバランサー・アクセス制限を判別できる情報を残す。
-                response_preview = " ".join((result.text or "")[:300].split())
-                self.logger.warning(
-                    "Belc通信一時エラー operation=%s status=%s attempt=%s/%s "
-                    "response_url=%s server=%s via=%s retry_after=%s body=%s",
-                    operation_name,
-                    result.status_code,
-                    attempt,
-                    BELC_REQUEST_RETRY_COUNT,
-                    result.url,
-                    result.headers.get("Server", ""),
-                    result.headers.get("Via", ""),
-                    result.headers.get("Retry-After", ""),
-                    response_preview,
-                )
-            except requests.RequestException as exc:
-                last_error = exc
-                status_code = exc.response.status_code if exc.response is not None else None
-                if status_code not in BELC_RETRY_STATUS_CODES and status_code is not None:
-                    raise
-                self.logger.warning(
-                    "Belc通信失敗 operation=%s status=%s attempt=%s/%s error=%s",
-                    operation_name,
-                    status_code,
-                    attempt,
-                    BELC_REQUEST_RETRY_COUNT,
-                    exc,
-                )
-
-            if attempt < BELC_REQUEST_RETRY_COUNT:
-                # リトライ間隔を段階的に延ばし、外部サイトへの連続アクセスを避ける。
-                time.sleep(BELC_REQUEST_RETRY_BACKOFF_SECONDS * attempt)
-
-        self.logger.error(
-            "Belc通信が再試行後も失敗しました operation=%s url=%s error=%s",
-            operation_name,
-            url,
-            last_error,
+        """ベルクサイトへ接続し、一時エラーの場合のみ再試行する。"""
+        return self.request_external(
+            session=session,
+            method=method,
+            url=url,
+            operation_name=operation_name,
+            service_name="ベルク",
+            retry_count=BELC_REQUEST_RETRY_COUNT,
+            backoff_seconds=BELC_REQUEST_RETRY_BACKOFF_SECONDS,
+            **kwargs,
         )
-        raise Error(
-            status_code=503,
-            error_code="1000062",
-            message="ベルクのサービスが一時的に利用できません。時間をおいて再実行してください。",
-        )
-
 
     def exception(self, e: Exception) -> dict:
         """
@@ -589,7 +538,7 @@ class AutoCsvInput_Belc(BaseBatch):
         """
         リクエスト情報を取得する。
         """
-        sql = self.database.read_sql("SELECT_AUTO_CSV_INPUT_INFO", __file__)
+        sql = self.database.read_sql("SELECT_AUTO_INPUT_INFO", __file__)
         params = {
             "INV_REG_NUM": BELC_INVOICE_NUMBER,
             "CRE_USER_ID": user_id
@@ -605,7 +554,7 @@ class AutoCsvInput_Belc(BaseBatch):
         """
         登録済みBelcレシートの一意キーと、旧データ互換用の日時・レシート番号を取得する。
         """
-        sql = self.database.read_sql("SELECT_AUTO_CSV_INPUT_CONT", __file__)
+        sql = self.database.read_sql("SELECT_AUTO_INPUT_CONT", __file__)
         params = {
             "INV_REG_NUM": BELC_INVOICE_NUMBER,
             "CRE_USER_ID": user_id,
@@ -673,10 +622,10 @@ class AutoCsvInput_Belc(BaseBatch):
         receipt_date = self.normalize_auto_input_date(receipt_info.get("receiptDate"))
         receipt_time = self.normalize_auto_input_time(receipt_info.get("receiptTime"))
         if not receipt_date or not receipt_time:
-            self.logger.warning(f"Skipped auto_csv_input_cont insert because receipt date/time is empty: {receipt_info}")
+            self.logger.warning(f"Skipped auto_input_cont insert because receipt date/time is empty: {receipt_info}")
             return
 
-        sql = self.database.read_sql("INSERT_AUTO_CSV_INPUT_CONT", __file__)
+        sql = self.database.read_sql("INSERT_AUTO_INPUT_CONT", __file__)
         params = {
             "CRE_PROG": self.__class__.__name__,
             "UPD_PROG": self.__class__.__name__,
@@ -703,7 +652,7 @@ class AutoCsvInput_Belc(BaseBatch):
         }
         inserted = self.database.insert(sql, params)
         self.logger.info(
-            f"auto_csv_input_cont registered: inserted={inserted}, inv={params['INV_REG_NUM']}, ret_dt={receipt_date}, ret_tm={receipt_time}"
+            f"auto_input_cont registered: inserted={inserted}, inv={params['INV_REG_NUM']}, ret_dt={receipt_date}, ret_tm={receipt_time}"
         )
 
     def load_receipt_categories(self, user_id: str) -> dict:
@@ -973,7 +922,7 @@ class AutoCsvInput_Belc(BaseBatch):
 
     def normalize_auto_input_date(self, value) -> str:
         """
-        YYYY-MM-DD / YYYYMMDD を auto_csv_input_cont 用の YYYYMMDD にそろえる。
+        YYYY-MM-DD / YYYYMMDD を auto_input_cont 用の YYYYMMDD にそろえる。
         """
         raw = str(value or "").strip()
         if re.fullmatch(r"\d{8}", raw):
@@ -984,7 +933,7 @@ class AutoCsvInput_Belc(BaseBatch):
 
     def normalize_auto_input_time(self, value) -> str:
         """
-        HH:MM / HH:MM:SS / HHMMSS / HHMM を auto_csv_input_cont 用の HHMMSS にそろえる。
+        HH:MM / HH:MM:SS / HHMMSS / HHMM を auto_input_cont 用の HHMMSS にそろえる。
         """
         raw = str(value or "").strip()
         if re.fullmatch(r"\d{6}", raw):
@@ -999,7 +948,7 @@ class AutoCsvInput_Belc(BaseBatch):
 
     def auto_input_datetime_to_iso(self, date_value, time_value) -> str:
         """
-        auto_csv_input_cont の RET_DT/RET_TM を購入履歴比較用の ISO 文字列に変換する。
+        auto_input_cont の RET_DT/RET_TM を購入履歴比較用の ISO 文字列に変換する。
         """
         date_text = self.normalize_auto_input_date(date_value)
         time_text = self.normalize_auto_input_time(time_value)

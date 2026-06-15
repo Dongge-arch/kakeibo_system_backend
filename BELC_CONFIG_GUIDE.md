@@ -1,7 +1,7 @@
 # Belc 自動登録バッチ - 設定ガイド
 
 ## 概要
-このガイドでは、実際のベルク会員サイトの HTML 構造に合わせて AutoCsvInput_Belc バッチを調整する方法を説明します。
+このガイドでは、実際のベルク会員サイトの HTML 構造に合わせて AutoInput_Belc バッチを調整する方法を説明します。
 
 ## 1. HTML 構造の確認手順
 
@@ -33,7 +33,7 @@ Form Data:
 ## 2. コード修正手順
 
 ### 2.1 詳細ページの取得 URL と form_data 修正
-ファイル: `src/batch/auto_csv_input_belc/autoCsvInput_Belc.py`
+ファイル: `src/batch/auto_input_belc/autoInput_Belc.py`
 メソッド: `fetch_receipt_detail`
 
 ```python

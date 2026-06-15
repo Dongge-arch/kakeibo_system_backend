@@ -1,4 +1,4 @@
-# AutoCsvInput_Belc リファクタリング完了
+# AutoInput_Belc リファクタリング完了
 
 ## 概要
 ベルク店舗の購入履歴から自動的にレシート情報を抽出し、登録するバッチクラスの設計をリファクタリングしました。
@@ -61,7 +61,7 @@ result = registration_api.main(request_dict)
 
 ## ファイル変更
 
-### Modified: `src/batch/auto_csv_input_belc/autoCsvInput_Belc.py`
+### Modified: `src/batch/auto_input_belc/autoInput_Belc.py`
 
 **新規追加メソッド**:
 - `fetch_receipt_detail(session, headers, checkbox_info)`: 詳細ページ取得

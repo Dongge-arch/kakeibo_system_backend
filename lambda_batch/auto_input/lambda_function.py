@@ -1,4 +1,4 @@
-from src.batch.auto_csv_input_belc.autoCsvInput_Belc import AutoCsvInput_Belc
+from src.batch.auto_input_belc.autoInput_Belc import AutoInput_Belc
 import os
 
 from src.common.config import APP_CONFIG
@@ -23,4 +23,4 @@ def lambda_handler(event, context):
     path = event.get("pathParameters") or {}
     body["action"] = "analyze"
     event = _set_body(event, body)
-    return AutoCsvInput_Belc().lambda_handler(event, context)
+    return AutoInput_Belc().lambda_handler(event, context)

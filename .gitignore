@@ -23,3 +23,5 @@ __pycache__/
 *credentials*.json
 aws-exports.js
 deploy/aws/application.lambda.yaml
+scripts
+.tmp_supplier_logos

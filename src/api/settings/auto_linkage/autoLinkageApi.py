@@ -7,8 +7,9 @@ from src.api.utils import now_ymd_hms
 from src.common.base import BaseRestApi
 from src.common.exception.error import Error
 from src.common.functions.response import response
-from src.batch.auto_csv_input_belc.autoCsvInput_Belc import AutoCsvInput_Belc
-from src.batch.auto_csv_input_suica.autoCsvInput_Suica import AutoCsvInput_Suica
+from src.batch.auto_input_belc.autoInput_Belc import AutoInput_Belc
+from src.batch.auto_input_suica.autoInput_Suica import AutoInput_Suica
+from src.batch.auto_input_etc.autoInput_Etc import AutoInput_Etc
 
 
 SUPPORTED_PLACES = (
@@ -21,6 +22,11 @@ SUPPORTED_PLACES = (
         "connectionType": "SUICA",
         "supplierName": "東日本旅客鉄道株式会社",
         "invoiceRegistrationNumber": "T9011001029597",
+    },
+    {
+        "connectionType": "ETC",
+        "supplierName": "東日本高速道路株式会社",
+        "invoiceRegistrationNumber": "T9010001095716",
     },
 )
 
@@ -140,7 +146,7 @@ class AutoLinkageApi(BaseRestApi):
             "USER_ID": user_id,
         }
         self.database.insert(
-            self.database.read_sql("INSERT_AUTO_CSV_INPUT_INFO", location=__file__),
+            self.database.read_sql("INSERT_AUTO_INPUT_INFO", location=__file__),
             params,
         )
 
@@ -191,7 +197,7 @@ class AutoLinkageApi(BaseRestApi):
                     "USER_ID": user_id,
                 }
             
-            self.database.update(self.database.read_sql("UPDATE_AUTO_CSV_INPUT_INFO", location=__file__), where)
+            self.database.update(self.database.read_sql("UPDATE_AUTO_INPUT_INFO", location=__file__), where)
         else:
             where={
                     "INV_REG_NUM": place["invoiceRegistrationNumber"],
@@ -214,7 +220,7 @@ class AutoLinkageApi(BaseRestApi):
                     "UPD_TM": hms,
                     "USER_ID": user_id,
                 }
-            self.database.insert(self.database.read_sql("INSERT_AUTO_CSV_INPUT_INFO", location=__file__), where)
+            self.database.insert(self.database.read_sql("INSERT_AUTO_INPUT_INFO", location=__file__), where)
         return {"ok": True, "message": "自動連携設定を保存しました。"}
 
     def login_place(self, body, user_id):
@@ -266,7 +272,7 @@ class AutoLinkageApi(BaseRestApi):
                 "UPD_TM": hms,
                 "USER_ID": user_id,
             }
-            self.database.update(self.database.read_sql("DELETE_AUTO_CSV_INPUT_INFO", location=__file__),where)
+            self.database.update(self.database.read_sql("DELETE_AUTO_INPUT_INFO", location=__file__),where)
         return {"ok": True, "message": "会員アカウントを削除しました。"}
 
     def find_row(self, connection_type, user_id):
@@ -282,7 +288,7 @@ class AutoLinkageApi(BaseRestApi):
             "USER_ID": user_id,
             "CONNECTION_TYPE": connection_type,
         }
-        rows = self.database.select(self.database.read_sql("SELECT_AUTO_CSV_INPUT_INFO", location=__file__), where)
+        rows = self.database.select(self.database.read_sql("SELECT_AUTO_INPUT_INFO", location=__file__), where)
         return rows[0] if rows else {}
 
     def run_place(self, body, user_id, request_dict):
@@ -305,7 +311,7 @@ class AutoLinkageApi(BaseRestApi):
             )
 
         if place["connectionType"] == "BELC":
-            result = AutoCsvInput_Belc().call(
+            result = AutoInput_Belc().call(
                 body={"action": "run"},
                 headers={"x-kakeibo-user-id": user_id},
             )
@@ -331,8 +337,27 @@ class AutoLinkageApi(BaseRestApi):
                 "failedCount": failed_count,
             })
 
+        if place["connectionType"] == "ETC":
+            result = AutoInput_Etc().call(
+                body={"action": "run"},
+                headers={"x-kakeibo-user-id": user_id},
+            )
+            body_result = result.get("body") or {}
+            if int(result.get("statusCode", 500)) >= 400:
+                return response(result.get("statusCode", 500), body_result)
+            return response(200, {
+                "ok": True,
+                "status": "COMPLETED",
+                "message": f"ETC利用明細を{int(body_result.get('registered') or 0)}件登録しました。",
+                "fetchedCount": int(body_result.get("totalFetched") or 0),
+                "insertedCount": int(body_result.get("needToRegister") or 0),
+                "duplicateCount": int(body_result.get("alreadyRegistered") or 0),
+                "registeredCount": int(body_result.get("registered") or 0),
+                "failedCount": int(body_result.get("failed") or 0),
+            })
+
         # Suicaは画像認証を含む既存の手動実行フローを使用する。
-        result = AutoCsvInput_Suica().call(
+        result = AutoInput_Suica().call(
             body={
                 "action": body.get("runAction") or "start",
                 "captcha": body.get("captcha") or "",
@@ -361,7 +386,7 @@ class AutoLinkageApi(BaseRestApi):
             "LAST_LOGIN_TM": hms,
             "USER_ID": user_id,
         }
-        self.database.update(self.database.read_sql("UPDATE_AUTO_CSV_INPUT_INFO_STATUS", location=__file__), where)
+        self.database.update(self.database.read_sql("UPDATE_AUTO_INPUT_INFO_STATUS", location=__file__), where)
 
     def public_row(self, place, row, include_account=False):
         """
@@ -433,6 +458,15 @@ class AutoLinkageApi(BaseRestApi):
                 "historyUrl": "https://cust-bf.belc.jp/mypage/PurchaseHistory",
                 "historySearchName": "お買い物履歴検索",
                 "historySearchUrl": "https://cust-bf.belc.jp/mypage/PurchaseHistory?handler=Search",
+            }
+        if connection_type == "ETC":
+            return {
+                "loginName": "ETC利用照会サービス ログイン",
+                "loginUrl": "https://www2.etc-meisai.jp/etc/R?funccode=1013000000&nextfunc=1013000000",
+                "loginPostName": "ETC利用照会サービス ログイン送信",
+                "loginPostUrl": "https://www2.etc-meisai.jp/etc/R?funccode=1013000000&nextfunc=1013000000",
+                "historyName": "ETC利用明細",
+                "historyUrl": "https://www2.etc-meisai.jp/etc/R?funccode=1013000000&nextfunc=1013000000",
             }
         raise Error(status_code=400, error_code="1000062", message="対応していない自動連携先です。")
 

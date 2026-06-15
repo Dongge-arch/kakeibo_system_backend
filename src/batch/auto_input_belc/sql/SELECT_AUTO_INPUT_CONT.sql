@@ -1,7 +1,7 @@
 SELECT 
 *
 FROM
-kakeibo.auto_csv_input_cont
+kakeibo.auto_input_cont
 WHERE
 INV_REG_NUM = %(INV_REG_NUM)s
 AND

@@ -1,4 +1,4 @@
-  INSERT INTO auto_csv_input_info (
+  INSERT INTO auto_input_info (
     CRE_PROG, UPD_PROG, INV_REG_NUM, SUP_NAME,
     PAGE_NAME_1, PAGE_URL_1, PAGE_NAME_2, PAGE_URL_2,
     PAGE_NAME_3, PAGE_URL_3, PAGE_NAME_4, PAGE_URL_4,
@@ -12,7 +12,7 @@
     %(CRE_DT)s, %(CRE_TM)s, %(UPD_DT)s, %(UPD_TM)s, %(USER_ID)s, %(USER_ID)s, 0
 WHERE NOT EXISTS (
     SELECT 1
-    FROM auto_csv_input_info
+    FROM auto_input_info
     WHERE CRE_USER_ID = %(USER_ID)s
       AND CONNECTION_TYPE = %(CONNECTION_TYPE)s
       AND DEL_FLAG = 0

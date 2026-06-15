@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT
 -- Copyright (c) 2026 Home Kakeibo System Contributors
 
-INSERT INTO kakeibo.auto_csv_input_cont (
+INSERT INTO kakeibo.auto_input_cont (
     CRE_PROG,
     UPD_PROG,
     INV_REG_NUM,
@@ -38,7 +38,7 @@ SELECT
     %(DEL_FLAG)s
 WHERE NOT EXISTS (
     SELECT 1
-    FROM kakeibo.auto_csv_input_cont
+    FROM kakeibo.auto_input_cont
     WHERE INV_REG_NUM = %(INV_REG_NUM)s
       AND CRE_USER_ID = %(USER_ID)s
       AND AUTO_INPUT_STATUS = %(AUTO_INPUT_STATUS)s

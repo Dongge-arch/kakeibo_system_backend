@@ -1,7 +1,7 @@
 SELECT 
 *
 FROM
-auto_csv_input_info
+auto_input_info
 WHERE
 INV_REG_NUM = %(INV_REG_NUM)s
 AND
