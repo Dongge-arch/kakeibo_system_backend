@@ -9,6 +9,7 @@ def categories():
         "category1": [
             {"CATEGORY1_NAME": "日用品"},
             {"CATEGORY1_NAME": "交通"},
+            {"CATEGORY1_NAME": "食費"},
         ],
         "category2": [
             {
@@ -20,6 +21,16 @@ def categories():
                 "CATEGORY1_NAME": "交通",
                 "CATEGORY2_NAME": "ガソリン",
                 "TAX_RATE": 0.1,
+            },
+            {
+                "CATEGORY1_NAME": "食費",
+                "CATEGORY2_NAME": "外食",
+                "TAX_RATE": 0.1,
+            },
+            {
+                "CATEGORY1_NAME": "食費",
+                "CATEGORY2_NAME": "米・パン・麺",
+                "TAX_RATE": 0.08,
             },
         ],
     }
@@ -95,3 +106,58 @@ def test_non_item_name_detection_accepts_amount_suffixes():
     assert is_non_item_detail("消費税等 182円")
     assert is_non_item_detail("10.0%対象額：2,000")
     assert not is_non_item_detail("消毒用エタノール")
+
+
+def test_restaurant_context_overrides_ramen_product_category():
+    analyzer = GeminiReceiptAnalyzer(api_key="test")
+    result = analyzer.normalize_ai_receipt(
+        {
+            "receiptInfo": {
+                "supplierName": "日高屋 本厚木一番街店",
+                "taxFlag": "1",
+                "totalPrice": 750,
+                "receiptDetails": [
+                    {
+                        "itemName": "中華そば",
+                        "category1": "食費",
+                        "category2": "米・パン・麺",
+                        "quantity": 1,
+                        "unitPrice": 750,
+                        "totalPrice": 750,
+                    }
+                ],
+            }
+        },
+        categories(),
+    )
+
+    detail = result["receiptInfo"]["receiptDetails"][0]
+    assert (detail["category1"], detail["category2"]) == ("食費", "外食")
+    assert detail["taxRate"] == 0.1
+
+
+def test_supermarket_ramen_keeps_product_category():
+    analyzer = GeminiReceiptAnalyzer(api_key="test")
+    result = analyzer.normalize_ai_receipt(
+        {
+            "receiptInfo": {
+                "supplierName": "ベルク 厚木店",
+                "taxFlag": "1",
+                "totalPrice": 200,
+                "receiptDetails": [
+                    {
+                        "itemName": "カップラーメン",
+                        "category1": "食費",
+                        "category2": "米・パン・麺",
+                        "quantity": 1,
+                        "unitPrice": 200,
+                        "totalPrice": 200,
+                    }
+                ],
+            }
+        },
+        categories(),
+    )
+
+    detail = result["receiptInfo"]["receiptDetails"][0]
+    assert (detail["category1"], detail["category2"]) == ("食費", "米・パン・麺")

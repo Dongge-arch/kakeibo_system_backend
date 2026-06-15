@@ -231,6 +231,48 @@ def fallback_category(item_name: str, pairs: set[tuple[str, str]]) -> tuple[str,
     return ("その他", "不明支出") if ("その他", "不明支出") in pairs else ("その他", "未分類")
 
 
+RESTAURANT_KEYWORDS = (
+    "ラーメン", "食堂", "レストラン", "カフェ", "喫茶", "居酒屋", "焼肉", "寿司",
+    "松屋", "すき家", "吉野家", "日高屋", "ガスト", "サイゼリヤ",
+    "マクドナルド", "ケンタッキー", "王将",
+)
+SUPERMARKET_KEYWORDS = (
+    "ベルク", "ライフ", "イオン", "イトーヨーカドー", "ロピア", "業務スーパー",
+    "オーケー", "西友", "マルエツ", "ヤオコー",
+)
+RESTAURANT_ITEM_KEYWORDS = (
+    "ラーメン", "餃子", "チャーハン", "定食", "セット", "大盛", "替玉",
+    "生ビール", "ドリンクバー",
+)
+
+
+def is_restaurant_receipt(supplier_name: str, items: list[dict]) -> bool:
+    """店舗名と明細構成から、飲食店での外食レシートか判定する。"""
+    supplier_text = str(supplier_name or "")
+    if any(keyword in supplier_text for keyword in SUPERMARKET_KEYWORDS):
+        return False
+    if any(keyword in supplier_text for keyword in RESTAURANT_KEYWORDS):
+        return True
+
+    item_text = " ".join(str(item.get("itemName") or "") for item in items)
+    score = sum(1 for keyword in RESTAURANT_ITEM_KEYWORDS if keyword in item_text)
+    return score >= 2
+
+
+def apply_contextual_category(receipt: dict, pairs: set[tuple[str, str]]) -> dict:
+    """飲食店のレシートでは商品名より利用場面を優先して外食へ分類する。"""
+    restaurant_pair = ("食費", "外食")
+    details = receipt.get("receiptDetails") or []
+    if restaurant_pair not in pairs:
+        return receipt
+    if not is_restaurant_receipt(receipt.get("supplierName"), details):
+        return receipt
+
+    for item in details:
+        item["category1"], item["category2"] = restaurant_pair
+    return receipt
+
+
 NON_ITEM_NAME_PATTERN = re.compile(
     r"^(?:"
     r"小計|合計|総合計|お買上(?:金額|額)?|請求額|支払(?:額|金額)?|"
@@ -265,6 +307,10 @@ def build_receipt_prompt(categories: dict) -> str:
 receiptDetails の各明細は category1/category2/taxRate を必ず入れてください。空文字は禁止です。
 category1 には「■」の分類名、category2 にはその下の項目名を入れてください。
 迷う場合も「未分類」にせず、商品名から最も近い分類を選んでください。
+- 分類は商品名だけでなく、店舗名・業態・レシート全体の利用場面を優先してください。
+- 飲食店、レストラン、ラーメン店、カフェ、ファストフード、居酒屋では、食品名でも「食費 > 外食」を優先してください。
+- スーパー、ドラッグストア、コンビニで購入した食品は、商品名に応じた食品分類を選んでください。
+- 同じラーメンでも、飲食店で食べた場合は外食、スーパーで購入した袋麺・カップ麺は米・パン・麺などに分類してください。
 
 【分類一覧】
 {category_text}
@@ -340,6 +386,8 @@ def build_receipt_category_mapping_prompt(categories: dict) -> str:
 receiptDetails の各明細は category1/category2/taxRate を必ず入れてください。空文字は禁止です。
 category1 には「■」の分類名、category2 にはその下の項目名を入れてください。
 迷う場合も「未分類」にせず、商品名から最も近い分類を選んでください。
+- 分類は商品名だけでなく、店舗名・業態・レシート全体の利用場面を優先してください。
+- 飲食店のレシートは食品名でも「食費 > 外食」、スーパー等で購入した食品は商品別分類を優先してください。
 
 【分類一覧】
 {category_text}
@@ -631,8 +679,7 @@ class GeminiReceiptAnalyzer:
                 total_price - detail_total,
             )
 
-        return {
-            "receiptInfo": {
+        normalized_receipt = {
                 "invoiceRegistrationNumber": normalize_invoice_number(
                     receipt.get("invoiceRegistrationNumber")
                     or receipt.get("invoiceNo")
@@ -651,8 +698,14 @@ class GeminiReceiptAnalyzer:
                 "totalPrice": total_price,
                 "receiptDetailCount": len(details),
                 "receiptDetails": details,
-            }
         }
+        apply_contextual_category(normalized_receipt, valid_pairs)
+        for detail in normalized_receipt["receiptDetails"]:
+            master_tax_rate = tax_rates.get((detail["category1"], detail["category2"]))
+            if master_tax_rate not in (None, ""):
+                detail["taxRate"] = normalize_tax_rate(master_tax_rate, detail["taxRate"])
+
+        return {"receiptInfo": normalized_receipt}
 
     def attach_usage(self, response: dict, usage: dict | None) -> dict:
         """レスポンス直下と body の両方に token 使用量を入れて、後続処理で取りやすくする。"""
