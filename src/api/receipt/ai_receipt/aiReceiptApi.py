@@ -7,6 +7,7 @@ import uuid
 
 from src.api.receipt.ai_receipt.receiptAnalyzer import GeminiReceiptAnalyzer
 from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
+from src.api.receipt.taxPrice import enrich_detail_prices, receipt_details_tax_included_total, to_number
 from src.api.utils import (
     int_token,
     json_response,
@@ -19,7 +20,12 @@ from src.common.base import BaseRestApi
 
 
 class AiReceiptApi(BaseRestApi):
-    """AIレシート解析、解析履歴、AI利用量を扱うAPIクラス。"""
+    """
+    AIレシート解析、解析履歴、AI利用量を扱うAPIクラス。
+    
+    Args:
+    
+    """
 
     def __init__(
         self,
@@ -86,7 +92,12 @@ class AiReceiptApi(BaseRestApi):
             self.record_usage(parsed, status_code, user_id)
             response_body = service_body(parsed)
             if isinstance(response_body, dict):
-                response_body = self.apply_registered_supplier(response_body, user_id)
+                if int(status_code) >= 400:
+                    # 2026-06-28 Codex: 解析失敗は利用量だけ記録し、レシート履歴には正常候補として残さない。
+                    response_body["usageSummary"] = self.usage_summary(user_id)
+                    return json_response(status_code, response_body)
+                # 2026-07-03 Codex: AI only extracts receipt facts; frontend resolves DB/user tax flag.
+                response_body = self.mark_tax_decision_required(response_body)
                 analysis_id = self.create_history(
                     user_id=user_id,
                     image_base64=image_base64,
@@ -99,6 +110,16 @@ class AiReceiptApi(BaseRestApi):
 
         except Exception as e:
             return json_response(500, {"errorMessage": str(e)})
+
+    def mark_tax_decision_required(self, ai_output):
+        """2026-07-03 Codex: Mark AI prices as raw printed amounts for frontend tax selection."""
+        receipt = ai_output.get("receiptInfo") or ai_output.get("receipt")
+        if isinstance(receipt, dict):
+            receipt["taxFlag"] = "1"
+            receipt["pricesAreRaw"] = True
+            receipt["needsTaxSelection"] = True
+        ai_output["needsTaxSelection"] = True
+        return ai_output
 
     def apply_registered_supplier(self, ai_output, user_id):
         """AI結果の登録番号が場所マスタに存在する場合、DBの店舗情報を優先する。"""
@@ -145,6 +166,45 @@ class AiReceiptApi(BaseRestApi):
             if detail.get("taxIncludedTotalPrice") is not None:
                 detail["totalPrice"] = detail["taxIncludedTotalPrice"]
 
+        return ai_output
+
+    def reconcile_ai_receipt_totals(self, ai_output):
+        """2026-06-28 Codex: AIの金額ブレを補正し、補正不能な差異は画面確認対象にする。"""
+        receipt = ai_output.get("receiptInfo") or ai_output.get("receipt")
+        if not isinstance(receipt, dict):
+            return ai_output
+
+        details = receipt.get("receiptDetails") or []
+        if not isinstance(details, list) or not details:
+            return ai_output
+
+        tax_flag = receipt.get("taxFlag")
+        header_total = int(to_number(receipt.get("totalPrice")))
+        detail_total = receipt_details_tax_included_total(details, tax_flag)
+        if header_total <= 0 and detail_total > 0:
+            receipt["totalPrice"] = detail_total
+            return ai_output
+        if header_total <= 0 or detail_total <= 0 or abs(header_total - detail_total) <= 1:
+            return ai_output
+
+        if len(details) == 1:
+            detail = details[0]
+            detail["totalPrice"] = header_total
+            detail["taxIncludedTotalPrice"] = header_total
+            prices = enrich_detail_prices(detail, tax_flag)
+            detail.update(prices)
+            receipt["totalPrice"] = prices.get("taxIncludedTotalPrice") or header_total
+            ai_output["reviewWarnings"] = ai_output.get("reviewWarnings") or []
+            ai_output["reviewWarnings"].append(
+                "AIの明細合計がレシート合計と異なったため、単一明細をレシート合計に合わせました。"
+            )
+            return ai_output
+
+        ai_output["needsReview"] = True
+        ai_output["reviewWarnings"] = ai_output.get("reviewWarnings") or []
+        ai_output["reviewWarnings"].append(
+            f"レシート合計({header_total})と明細合計({detail_total})が一致しません。"
+        )
         return ai_output
 
     def create_history(self, user_id, image_base64, image_mime_type, ai_output):

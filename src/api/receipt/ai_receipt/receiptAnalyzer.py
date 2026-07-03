@@ -3,6 +3,7 @@
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
 import base64
+import ast
 import json
 import logging
 import os
@@ -18,7 +19,13 @@ log = logging.getLogger(__name__)
 
 
 def clean_json_text(text: str) -> str:
-    """AI が ```json ... ``` を付けた場合に外側だけ取り除く。"""
+    """
+    AI が ```json ... ``` を付けた場合に外側だけ取り除く。
+    
+    Args:
+    
+    Returns:
+    """
     if not text:
         return ""
 
@@ -35,7 +42,84 @@ def clean_json_text(text: str) -> str:
     return text.strip()
 
 
-def to_int(value) -> int:
+def extract_balanced_json_text(text: str) -> str:
+    """Return the first balanced JSON object/array found in AI text."""
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+
+    start = -1
+    opening = ""
+    for idx, char in enumerate(raw):
+        if char in "{[":
+            start = idx
+            opening = char
+            break
+    if start < 0:
+        return raw
+
+    closing = "}" if opening == "{" else "]"
+    stack = []
+    in_string = False
+    escaped = False
+    quote_char = ""
+
+    for idx in range(start, len(raw)):
+        char = raw[idx]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote_char:
+                in_string = False
+            continue
+
+        if char in ("'", '"'):
+            in_string = True
+            quote_char = char
+            continue
+        if char in "{[":
+            stack.append(char)
+            continue
+        if char in "}]":
+            if not stack:
+                continue
+            expected = "}" if stack[-1] == "{" else "]"
+            if char != expected:
+                continue
+            stack.pop()
+            if not stack:
+                return raw[start:idx + 1]
+
+    if raw[start:].endswith(closing):
+        return raw[start:]
+    return raw
+
+
+def repair_json_text(text: str) -> str:
+    """Fix common AI JSON slips without changing valid JSON."""
+    repaired = extract_balanced_json_text(clean_json_text(text))
+    repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+    repaired = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:", r'\1"\2":', repaired)
+    return repaired.strip()
+
+
+def loads_ai_json(text: str):
+    """Parse JSON returned by AI with a small repair pass for common formatting slips."""
+    raw_text = clean_json_text(text)
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        repaired = repair_json_text(raw_text)
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            value = ast.literal_eval(repaired)
+            return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def to_int(value):
     """カンマ付き文字列や None を安全に整数へ変換する。"""
     if value is None:
         return 0
@@ -43,7 +127,8 @@ def to_int(value) -> int:
         return value
 
     try:
-        return int(str(value).replace(",", "").strip())
+        number = float(str(value).replace(",", "").strip())
+        return int(number) if number == int(number) else round(number, 2)
     except Exception:
         return 0
 
@@ -477,8 +562,20 @@ class GeminiReceiptAnalyzer:
     api_retry_delay_seconds = 1
 
     def __init__(self, api_key: str | None = None, model: str | None = None, timeout: int = 40):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or APP_CONFIG.get("ai_receipt", {}).get("api_key", "")
-        self.model = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash-lite"
+        ai_receipt_config = APP_CONFIG.get("ai_receipt", {})
+        self.api_key = (
+            api_key
+            or os.environ.get("GEMINI_API_KEY")
+            or ai_receipt_config.get("gemini_api_key")
+            or ai_receipt_config.get("api_key")
+            or ""
+        )
+        self.model = (
+            model
+            or os.environ.get("GEMINI_MODEL")
+            or ai_receipt_config.get("gemini_model")
+            or "gemini-2.5-flash-lite"
+        )
         self.timeout = timeout
 
     def normalize_usage(self, usage: dict) -> dict:
@@ -599,7 +696,8 @@ class GeminiReceiptAnalyzer:
         details = []
         valid_pairs = category_pairs(categories or {})
         tax_rates = category_tax_rate_map(categories or {})
-        tax_flag = str(receipt.get("taxFlag") if receipt.get("taxFlag") is not None else "0")
+        # 2026-07-03 Codex: Do not trust AI taxFlag; keep printed item prices raw until frontend DB/user selection.
+        tax_flag = "1"
 
         for item in raw_items if isinstance(raw_items, list) else []:
             if not isinstance(item, dict):
@@ -618,7 +716,9 @@ class GeminiReceiptAnalyzer:
                 else item.get("amount")
             )
             quantity = to_int(item.get("quantity")) or 1
-            unit_price = to_int(item.get("unitPrice") or item.get("unit_price")) or total_price
+            raw_unit_price = optional_int(item.get("unitPrice") or item.get("unit_price"))
+            # 2026-07-03 Codex: If AI only returns a line total, derive unit price from quantity.
+            unit_price = raw_unit_price if raw_unit_price is not None else (total_price / quantity if quantity else total_price)
 
             category1 = clean_category_label(item.get("category1") or item.get("category_1") or "")
             category2 = clean_category_label(item.get("category2") or item.get("category_2") or item.get("category_3") or "")
@@ -695,6 +795,8 @@ class GeminiReceiptAnalyzer:
                 "receiptDate": normalize_date(receipt.get("receiptDate") or receipt.get("date")),
                 "receiptTime": normalize_time(receipt.get("receiptTime") or receipt.get("time")),
                 "taxFlag": tax_flag,
+                "pricesAreRaw": True,
+                "needsTaxSelection": True,
                 "totalPrice": total_price,
                 "receiptDetailCount": len(details),
                 "receiptDetails": details,
@@ -742,7 +844,7 @@ class GeminiReceiptAnalyzer:
 
         return self.attach_usage({
             "statusCode": 200,
-            "body": self.normalize_ai_receipt(json.loads(raw_text), categories),
+            "body": self.normalize_ai_receipt(loads_ai_json(raw_text), categories),
         }, usage)
 
     def analyze_text_with_prompt(self, text: str, prompt: str, categories=None, label: str = "入力データ") -> dict:
@@ -775,7 +877,7 @@ class GeminiReceiptAnalyzer:
             log.info("Gemini raw json text cleaned: %s", raw_text[:1000])
             return self.attach_usage({
                 "statusCode": 200,
-                "body": json.loads(raw_text),
+                "body": loads_ai_json(raw_text),
             }, usage)
         except Exception as e:
             log.exception("Receipt AI json analyze failed.")

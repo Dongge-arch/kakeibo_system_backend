@@ -1,6 +1,8 @@
 from src.api.receipt.ai_receipt.receiptAnalyzer import (
+    APP_CONFIG,
     GeminiReceiptAnalyzer,
     is_non_item_detail,
+    loads_ai_json,
 )
 
 
@@ -161,3 +163,24 @@ def test_supermarket_ramen_keeps_product_category():
 
     detail = result["receiptInfo"]["receiptDetails"][0]
     assert (detail["category1"], detail["category2"]) == ("食費", "米・パン・麺")
+
+
+def test_gemini_api_key_can_be_loaded_from_gemini_api_key_config(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setitem(APP_CONFIG, "ai_receipt", {"gemini_api_key": "from-config"})
+
+    analyzer = GeminiReceiptAnalyzer()
+
+    assert analyzer.api_key == "from-config"
+
+
+def test_loads_ai_json_repairs_trailing_commas():
+    parsed = loads_ai_json('{"mappings":[{"category1":"food","category2":"rice",},],}')
+
+    assert parsed == {"mappings": [{"category1": "food", "category2": "rice"}]}
+
+
+def test_loads_ai_json_extracts_json_from_wrapped_text():
+    parsed = loads_ai_json('Here is the JSON:\n```json\n{"ok": true,}\n```\nThanks')
+
+    assert parsed == {"ok": True}

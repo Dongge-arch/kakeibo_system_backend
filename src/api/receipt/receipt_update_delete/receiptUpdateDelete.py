@@ -11,6 +11,7 @@ from src.common.exception import Error
 from datetime import datetime
 from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
 from src.api.receipt.taxPrice import enrich_detail_prices
+from src.api.receipt.receiptValidation import validate_receipt_for_save
 
 
 class ReceiptUpdateDelete(BaseRestApi):
@@ -44,7 +45,10 @@ class ReceiptUpdateDelete(BaseRestApi):
         user_id = self.require_user_id(request_dict)
         
         if body.get("updateDeleteType") == "update":
-            receipt_id = body.get("receiptInfo").get("receiptId")
+            receipt_info = body.get("receiptInfo") or {}
+            # 2026-06-28 Codex: 更新時も登録時と同じ業務チェックを通し、空明細や合計不一致を防ぐ。
+            validate_receipt_for_save(receipt_info)
+            receipt_id = receipt_info.get("receiptId")
             self.update_receipt_info(receipt_id=receipt_id,body=body,user_id=user_id)
             self.update_receipt_details(receipt_id=receipt_id,body=body,user_id=user_id)
             return response(status_code=200,

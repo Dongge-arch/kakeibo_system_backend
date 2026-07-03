@@ -13,6 +13,7 @@ from src.common.auth_context import get_current_user_id
 from datetime import datetime
 from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
 from src.api.receipt.taxPrice import enrich_detail_prices
+from src.api.receipt.receiptValidation import validate_receipt_for_save
 
 
 class NewReceiptRegistration(BaseRestApi):
@@ -71,6 +72,9 @@ class NewReceiptRegistration(BaseRestApi):
             raise Error(status_code=510,
                         error_code="1000062",
                         message="リクエストのボディが空です。")
+
+        # 2026-06-28 Codex: AI解析や画面入力から空明細・0円明細が正式登録されるのを防ぐ。
+        validate_receipt_for_save(receipt_info)
 
         detail_count = receipt_info.get("receiptDetailCount")
         receipt_details = receipt_info.get("receiptDetails", [])

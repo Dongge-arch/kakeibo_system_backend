@@ -18,7 +18,7 @@ def to_display_number(value):
     number = to_number(value)
     if number == int(number):
         return int(number)
-    return number
+    return round(number, 2)
 
 
 def normalize_tax_rate(value, default=0.1):
@@ -31,7 +31,25 @@ def normalize_tax_rate(value, default=0.1):
 
 
 def round_price(value):
-    return int(to_number(value) + 0.5)
+    # 2026-07-03 Codex: Support two decimal places and negative prices instead of integer-only yen rounding.
+    return round(to_number(value), 2)
+
+
+def detail_tax_included_total(detail: dict, tax_flag):
+    """2026-06-28 Codex: 明細合計の比較では常に税込金額へ寄せる。"""
+    if not isinstance(detail, dict):
+        return 0
+    # 2026-06-29 Codex: totalPriceを税込の表示金額として優先し、誤った税区分で作られた旧内訳に引きずられないようにする。
+    if detail.get("totalPrice") not in (None, ""):
+        return to_number(detail.get("totalPrice"))
+    if detail.get("taxIncludedTotalPrice") not in (None, ""):
+        return to_number(detail.get("taxIncludedTotalPrice"))
+    return to_number(enrich_detail_prices(detail, tax_flag).get("taxIncludedTotalPrice"))
+
+
+def receipt_details_tax_included_total(details: list, tax_flag):
+    """2026-06-28 Codex: ヘッダー合計と明細合計の整合性確認用に税込合計を集計する。"""
+    return sum(detail_tax_included_total(detail, tax_flag) for detail in details or [])
 
 
 def enrich_detail_prices(detail: dict, tax_flag) -> dict:
@@ -55,27 +73,37 @@ def enrich_detail_prices(detail: dict, tax_flag) -> dict:
     display_total = to_number(detail.get("totalPrice"))
     quantity = to_number(detail.get("quantity"), 1) or 1
     discount = to_number(detail.get("discount"))
-    base_total = max(0, display_unit * quantity - discount)
+    # 2026-07-03 Codex: Keep negative prices/refunds valid and preserve decimal quantities.
+    base_total = display_unit * quantity - discount
 
     if is_tax_excluded:
         tax_excluded_unit = display_unit
         tax_included_unit = round_price(display_unit * tax_multiplier)
-        # totalPrice is the final tax-included amount. This also preserves a
-        # manually entered total instead of recalculating it from unit price.
-        tax_included_total = display_total or round_price(base_total * tax_multiplier)
+        # 2026-06-28 Codex: 既存の税込合計がある場合はそれを最優先し、ヘッダー/明細合計のブレを抑える。
+        tax_included_total = (
+            display_total
+            or to_number(detail.get("taxIncludedTotalPrice"))
+            or round_price(base_total * tax_multiplier)
+        )
         tax_excluded_total = (
+            to_number(detail.get("taxExcludedTotalPrice"))
+            or (
             round_price(tax_included_total / tax_multiplier)
             if tax_included_total
             else base_total
+            )
         )
     else:
         tax_included_unit = display_unit
-        tax_included_total = display_total or base_total
+        tax_included_total = to_number(detail.get("taxIncludedTotalPrice")) or display_total or base_total
         tax_excluded_unit = round_price(display_unit / tax_multiplier) if display_unit else 0
         tax_excluded_total = (
+            to_number(detail.get("taxExcludedTotalPrice"))
+            or (
             round_price(tax_included_total / tax_multiplier)
             if tax_included_total
             else 0
+            )
         )
 
     # 画面表示と家計簿集計では税込価格に統一する。

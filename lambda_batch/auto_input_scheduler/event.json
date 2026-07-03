@@ -3,5 +3,7 @@
     "x-kakeibo-user-id": "f0ea36dc4c4b4fdba5915827cd238fac",
     "Content-Type": "application/json"
   },
-  "body": {}
+  "body":{
+    "action": "scheduled"
+}
 }

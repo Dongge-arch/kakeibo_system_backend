@@ -27,6 +27,7 @@ def _configure_local_file_handlers() -> None:
 
 
 def _disable_lambda_file_handlers() -> None:
+    # 2026-06-28 Codex: Lambdaの /var/task は読み取り専用のため、設定由来のファイルログを必ず外す。
     logging_config = APP_CONFIG.get("logging", {})
     handlers = logging_config.get("handlers", {})
     file_handlers = [

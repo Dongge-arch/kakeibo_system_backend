@@ -52,6 +52,7 @@ class AutoInputScheduler(BaseAutoInput):
         results = []
         succeeded = 0
         failed = 0
+        unavailable_connections = set()
 
         for row in rows:
             user_id = str(self.value(row, "CRE_USER_ID", "cre_user_id") or "")
@@ -62,12 +63,30 @@ class AutoInputScheduler(BaseAutoInput):
             if not user_id or batch_class is None:
                 continue
 
-            batch_result = batch_class().call(
-                body={"action": "scheduled"},
-                headers={"x-kakeibo-user-id": user_id},
-            )
+            if connection_type in unavailable_connections:
+                # 2026-06-28 Codex: 同一スケジュール内で外部サイト障害を検知したら、同サイトへの連続アクセスを止める。
+                batch_result = {
+                    "statusCode": 503,
+                    "body": {
+                        "errorCode": "1000062",
+                        "errorMessage": f"{connection_type} service is temporarily unavailable; skipped in this run.",
+                    },
+                }
+            else:
+                batch_result = batch_class().call(
+                    body={"action": "scheduled"},
+                    headers={"x-kakeibo-user-id": user_id},
+                )
             status_code = int(batch_result.get("statusCode", 500))
-            if status_code < 400:
+            body = batch_result.get("body") or {}
+            if connection_type == "BELC" and status_code == 503:
+                unavailable_connections.add(connection_type)
+            batch_failed_count = int(body.get("failed") or 0)
+            batch_registered_count = int(body.get("registered") or 0)
+            is_batch_success = status_code < 400 and (
+                batch_failed_count == 0 or batch_registered_count > 0
+            )
+            if is_batch_success:
                 succeeded += 1
             else:
                 failed += 1
@@ -75,7 +94,7 @@ class AutoInputScheduler(BaseAutoInput):
                 "userId": user_id,
                 "connectionType": connection_type,
                 "statusCode": status_code,
-                "body": batch_result.get("body") or {},
+                "body": body,
             })
 
         return response(200, {

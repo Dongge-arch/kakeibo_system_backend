@@ -4,6 +4,8 @@
 
 """ログ出力前に認証情報や大容量データをマスクする共通処理。"""
 
+import re
+
 
 SENSITIVE_KEYS = {
     "authorization",
@@ -15,12 +17,16 @@ SENSITIVE_KEYS = {
     "captcha",
     "cookie",
     "set-cookie",
+    "token",
+    "jwt",
 }
 
 LARGE_DATA_KEYS = {
     "captchaimage",
     "imagebase64",
     "supplierimage",
+    "aiimage",
+    "image",
 }
 
 NORMALIZED_SENSITIVE_KEYS = {
@@ -48,5 +54,16 @@ def sanitize_log_value(value, key: str = ""):
 
     if isinstance(value, list):
         return [sanitize_log_value(item) for item in value]
+
+    # 2026-06-28 Codex: キー名で拾えないBearer/JWTや長いdata URLもログ直前でマスクする。
+    if isinstance(value, str):
+        if value.lower().startswith("bearer "):
+            return "[REDACTED]"
+        if re.fullmatch(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", value):
+            return "[REDACTED]"
+        if value.startswith("data:image/") and len(value) > 200:
+            return f"[OMITTED length={len(value)}]"
+        if len(value) > 4000:
+            return f"[OMITTED length={len(value)}]"
 
     return value

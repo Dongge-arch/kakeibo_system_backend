@@ -64,13 +64,15 @@ class SupplierLogoStorage:
         log.info("Uploading supplier logo for invoice %s.", invoice_number)
         key = self.key_for(invoice_number)
         if not self.enabled():
-            log.warning(
+            # 2026-06-28 Codex: ロゴ未設定は通常運用でも起きるため、CloudWatchノイズを抑える。
+            log.info(
                 "Skipped supplier logo upload because S3 bucket is not configured for invoice %s.",
                 invoice_number,
             )
             return ""
         if not key or not image_value:
-            log.warning(
+            # 2026-06-28 Codex: 画像未指定はエラーではないため info に落とす。
+            log.info(
                 "Skipped supplier logo upload because image payload is empty for invoice %s.",
                 invoice_number,
             )
@@ -80,7 +82,8 @@ class SupplierLogoStorage:
         if not body:
             raw_value = str(image_value or "").strip()
             if raw_value.startswith(("http://", "https://")):
-                log.warning(
+                # 2026-06-28 Codex: 既存の署名付きURLは再アップロード対象外として扱う。
+                log.info(
                     "Skipped supplier logo upload for remote URL image for invoice %s.",
                     invoice_number,
                 )
@@ -123,7 +126,8 @@ class SupplierLogoStorage:
             if self._is_not_found_error(e):
                 return ""
             if self._is_access_denied_error(e):
-                log.warning(
+                # 2026-06-28 Codex: S3権限/既存オブジェクト問題で一覧画面全体を失敗扱いにしない。
+                log.info(
                     "Skipped supplier logo because S3 object could not be accessed for key %s.",
                     key,
                 )
