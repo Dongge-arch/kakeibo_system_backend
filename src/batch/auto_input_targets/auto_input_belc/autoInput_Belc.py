@@ -703,7 +703,7 @@ class AutoInput_Belc(BaseAutoInput):
                 analyzer=analyzer,
             ))
 
-        return self.apply_belc_category_map(receipt_info, category_map)
+        return self.apply_belc_category_map(receipt_info, category_map, categories)
 
     def build_local_belc_category_map(self, receipt_info: dict, categories: dict) -> dict:
         """
@@ -764,12 +764,13 @@ class AutoInput_Belc(BaseAutoInput):
             }
         return result
 
-    def apply_belc_category_map(self, receipt_info: dict, category_map: dict) -> dict:
+    def apply_belc_category_map(self, receipt_info: dict, category_map: dict, categories: dict) -> dict:
         """
         Belcカテゴリ対応表を各商品明細へ適用する。
         """
         result = dict(receipt_info)
         details = []
+        default_mapping = self.default_unknown_belc_category_mapping(categories)
         for detail in receipt_info.get("receiptDetails") or []:
             next_detail = dict(detail)
             belc_category = {
@@ -778,7 +779,12 @@ class AutoInput_Belc(BaseAutoInput):
             }
             mapped = category_map.get(self.belc_category_key(belc_category))
             if not mapped:
-                raise RuntimeError(f"Belc category mapping not found: {belc_category}")
+                # 2026-07-15 Codex: Belc側のカテゴリ名が空でAI補完もできない場合は、登録全体を止めず未分類へ退避する。
+                self.logger.warning(
+                    "Belc category mapping not found; fallback to default category: %s",
+                    belc_category,
+                )
+                mapped = default_mapping
             next_detail["category1"] = mapped.get("category1")
             next_detail["category2"] = mapped.get("category2")
             next_detail["taxRate"] = mapped.get("taxRate")
@@ -787,6 +793,27 @@ class AutoInput_Belc(BaseAutoInput):
         result["receiptDetails"] = details
         result["receiptDetailCount"] = len(details)
         return result
+
+    def default_unknown_belc_category_mapping(self, categories: dict) -> dict:
+        """
+        Belc未知カテゴリ用の退避先カテゴリを返す。
+        """
+        rows = self.category_rows(categories)
+        if not rows:
+            return {"category1": "その他", "category2": "未分類", "taxRate": 0.10}
+        for row in rows:
+            if row.get("category1") == "その他" and row.get("category2") == "未分類":
+                return {
+                    "category1": row.get("category1"),
+                    "category2": row.get("category2"),
+                    "taxRate": normalize_tax_rate(row.get("taxRate")),
+                }
+        first_row = rows[0]
+        return {
+            "category1": first_row.get("category1"),
+            "category2": first_row.get("category2"),
+            "taxRate": normalize_tax_rate(first_row.get("taxRate")),
+        }
 
     def extract_unique_belc_categories(self, receipt_info: dict) -> list[dict]:
         """

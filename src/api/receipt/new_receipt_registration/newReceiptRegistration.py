@@ -346,7 +346,8 @@ class NewReceiptRegistration(BaseRestApi):
             return raw
         if raw.startswith("T") and len(raw) == 14 and raw[1:].isdigit():
             return raw
-        if raw == "SUICA":
+        # 2026-07-15 Codex: 実店舗のインボイス番号を持たない自動連携元は、画面で識別できる固定番号として保存する。
+        if raw in ("SUICA", "AMAZON"):
             return raw
         if raw.isdigit() and len(raw) == 13:
             return f"T{raw}"
