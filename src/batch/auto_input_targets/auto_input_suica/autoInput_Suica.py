@@ -10,6 +10,7 @@ import re
 import ssl
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from urllib.parse import urlencode, urljoin
 
 import requests
@@ -508,7 +509,7 @@ class AutoInput_Suica(BaseAutoInput):
         """一時保存済みの支出履歴を日単位でレシート登録する。"""
         rows = self.database.select(
             """
-            SELECT id, RET_CONT
+            SELECT id, RET_CONT, SOURCE_KEY
             FROM kakeibo.auto_input_cont
             WHERE CRE_USER_ID = %(USER_ID)s
               AND CONNECTION_TYPE = %(CONNECTION_TYPE)s
@@ -521,8 +522,18 @@ class AutoInput_Suica(BaseAutoInput):
         registered_count = 0
         duplicate_count = 0
         grouped = {}
+        processed_source_keys = set()
         for staging_row in rows:
             history = json.loads(self.value(staging_row, "RET_CONT", "ret_cont") or "{}")
+            source_key = self.value(staging_row, "SOURCE_KEY", "source_key") or hashlib.sha256(
+                json.dumps(history, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            # 2026-09-11 Codex: 同一取込内の重複履歴を先に除外し、合計金額の二重計上を防止する。
+            if source_key in processed_source_keys:
+                self.update_auto_input_status(staging_row, user_id, "DUPLICATE")
+                duplicate_count += 1
+                continue
+            processed_source_keys.add(source_key)
             amount = history.get("amount")
             if amount is None or amount >= 0:
                 self.update_auto_input_status(staging_row, user_id, "SKIPPED")
@@ -536,6 +547,8 @@ class AutoInput_Suica(BaseAutoInput):
         if not grouped:
             return registered_count, duplicate_count
 
+        # 2026-09-11 Codex: 正式登録済みレシートを一括取得し、API呼出前に重複候補を除外する。
+        registered_signatures = self.select_registered_receipt_signatures(user_id)
         registration_api = NewReceiptRegistration()
         for (receipt_date, group_type, _), group_rows in grouped.items():
             details = [self.history_to_detail(history) for _, history in group_rows]
@@ -552,6 +565,16 @@ class AutoInput_Suica(BaseAutoInput):
                 # JR東日本ロゴは外部ストレージに依存せず、コード内のJPEGを使用する。
                 "supplierImage": self.supplier_image,
             }
+            receipt_signature = self.build_receipt_signature(
+                receipt_info["receiptDate"],
+                receipt_info["receiptTime"],
+                receipt_info["totalPrice"],
+            )
+            if receipt_signature in registered_signatures:
+                for staging_row, _ in group_rows:
+                    self.update_auto_input_status(staging_row, user_id, "DUPLICATE")
+                    duplicate_count += 1
+                continue
             auth_token = set_current_user_id(user_id)
             try:
                 result = registration_api.call(
@@ -572,7 +595,40 @@ class AutoInput_Suica(BaseAutoInput):
             for staging_row, _ in group_rows:
                 self.update_auto_input_status(staging_row, user_id, "3")
                 registered_count += 1
+            registered_signatures.add(receipt_signature)
         return registered_count, duplicate_count
+
+    def select_registered_receipt_signatures(self, user_id):
+        """同一利用者・交通カードの登録済みレシート識別値を取得する。"""
+        rows = self.database.select(
+            """
+            SELECT RET_DT, RET_TM, TOA_PRICE
+            FROM receipt_info
+            WHERE SUP_NAME = %(SUP_NAME)s
+              AND RET_TM = '000000'
+              AND CRE_USER_ID = %(USER_ID)s
+              AND DEL_FLAG = 0
+            """,
+            {"SUP_NAME": self.supplier_name, "USER_ID": user_id},
+        )
+        return {
+            self.build_receipt_signature(
+                self.value(row, "RET_DT", "ret_dt"),
+                self.value(row, "RET_TM", "ret_tm"),
+                self.value(row, "TOA_PRICE", "toa_price"),
+            )
+            for row in rows
+        }
+
+    @staticmethod
+    def build_receipt_signature(receipt_date, receipt_time, total_price):
+        """レシートの重複判定項目をDB保存形式へ正規化する。"""
+        date_text = str(receipt_date or "").strip()
+        time_text = str(receipt_time or "").strip()
+        normalized_date = datetime.strptime(date_text, "%Y-%m-%d").strftime("%Y%m%d") if "-" in date_text else date_text
+        normalized_time = datetime.strptime(time_text, "%H:%M").strftime("%H%M%S") if ":" in time_text else time_text
+        normalized_price = Decimal(str(total_price or 0)).quantize(Decimal("0.01"))
+        return normalized_date, normalized_time, normalized_price
 
     def history_to_detail(self, history):
         """Suica利用履歴1件を家計簿のレシート明細へ変換する。"""

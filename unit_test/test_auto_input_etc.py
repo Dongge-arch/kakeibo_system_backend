@@ -2,7 +2,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from src.batch.autu_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
+from src.batch.auto_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
 
 
 def test_parse_saved_etc_history():
