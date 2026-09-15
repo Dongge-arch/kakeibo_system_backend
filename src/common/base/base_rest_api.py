@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
-"""Shared base class for local API classes."""
+"""
+ベースクラス: REST APIの共通処理を提供する抽象クラス。
+"""
 
 import datetime
 import json
@@ -23,7 +25,9 @@ from src.common.log_sanitizer import sanitize_log_value
 
 
 class BaseRestApi(Base, ABC):
-    """Provide the common local API execution flow."""
+    """
+    べースクラス: REST APIの共通処理を提供する抽象クラス。
+    """
 
     def __init__(
         self,
@@ -43,7 +47,16 @@ class BaseRestApi(Base, ABC):
         self.database = create_database(db_path=db_path)
 
     def get_request_system(self) -> dict:
-        """API呼び出しごとの共通システム情報を作成する。"""
+        """
+        API呼び出しごとの共通システム情報を作成する。
+
+        Args:
+            None
+
+        Returns:
+            dict: system情報を含む辞書。local_dt（現在日時）、cache（キャッシュ用辞書）= Noneを含む。
+        """
+
         return {
             "system": {
                 "local_dt": datetime.datetime.now(ZoneInfo(TIME_ZONE_JST)),
@@ -52,19 +65,47 @@ class BaseRestApi(Base, ABC):
         }
 
     def append_cache(self, request_dict: dict, key, value):
-        """同一リクエスト内で再利用する値をキャッシュへ保存する。"""
+        """
+        同一リクエスト内で再利用する値をキャッシュへ保存する。
+
+        Args:
+            request_dict (dict): API呼び出し時のリクエスト情報を含む辞書。
+            key: キャッシュに保存するキー。
+            value: キャッシュに保存する値。
+
+        Returns:
+            None
+        """
         if request_dict:
             request_dict.setdefault("system", {}).setdefault("cache", {})[key] = value
 
     def is_cache(self, request_dict: dict, key) -> bool:
-        """同一リクエスト内キャッシュに指定キーが存在するか判定する。"""
+        """
+        同一リクエスト内キャッシュに指定キーが存在するか判定する。
+
+        Args:
+            request_dict (dict): API呼び出し時のリクエスト情報を含む辞書。
+            key: キャッシュに存在するか判定するキー。
+
+        Returns:
+            bool: キャッシュに指定キーが存在する場合はTrue、存在しない場合はFalseを返す。
+        """
         return bool(
             request_dict
             and key in request_dict.get("system", {}).get("cache", {})
         )
 
     def get_cache(self, request_dict: dict, key):
-        """同一リクエスト内キャッシュから指定キーの値を取得する。"""
+        """
+        同一リクエスト内キャッシュから指定キーの値を取得する。
+        
+        Args:
+            request_dict (dict): API呼び出し時のリクエスト情報を含む辞書。
+            key: キャッシュから取得するキー。
+
+        Returns:
+            値: キャッシュに指定キーが存在する場合はその値を返す。存在しない場合はNoneを返す。
+        """
         if not request_dict:
             return None
         return request_dict.get("system", {}).get("cache", {}).get(key)
@@ -77,7 +118,22 @@ class BaseRestApi(Base, ABC):
         validate_b=True,
         **kwargs,
     ) -> dict:
-        """Run an API class directly from app.py."""
+        """
+        API呼び出しの共通処理を実行する。
+        
+        Args:
+            body (dict, optional): API呼び出し時のリクエストボディ。デフォルトはNone。
+            headers (dict, optional): API呼び出し時のリクエストヘッダ。デフォルトはNone。
+            validate_h (bool, optional): ヘッダのバリデーションを行うかどうかのフラグ。デフォルトはFalse。
+            validate_b (bool, optional): ボディのバリデーションを行うかどうかのフラグ。デフォルトはTrue。
+            **kwargs: その他の任意のキーワード引数。
+            
+        Returns:
+            dict: API呼び出しの結果を含む辞書。
+        
+        Raises:
+            Exception: API呼び出し中に発生した例外を再スローする。
+        """
         normalized_headers = self.normalize_headers(headers or {})
         request_dict = {
             "headers": normalized_headers,
@@ -131,17 +187,49 @@ class BaseRestApi(Base, ABC):
             self.logger.reset_request_id()
 
     def normalize_headers(self, headers: dict) -> dict:
+        """
+        ヘッダのキーを小文字に変換する。
+
+        Args:
+            headers (dict): API呼び出し時のリクエストヘッダ。
+
+        Returns:
+            dict: ヘッダのキーが小文字に変換された辞書。
+        """
         return {str(key).lower(): value for key, value in dict(headers or {}).items()}
 
     def require_user_id(self, request_dict: dict) -> str:
+        """
+        リクエストからユーザーIDを取得する。
+
+        Args:
+            request_dict (dict): API呼び出し時のリクエスト情報。
+
+        Returns:
+            str: ユーザーID。
+
+        Raises:
+            Error: ユーザーIDがリクエストに含まれていない場合。
+        """
         user_id = ""
         if request_dict:
             user_id = request_dict.get("headers", {}).get("x-kakeibo-user-id", "")
         if not user_id:
             raise Error(status_code=401, error_code="1000062", message="userId is required.")
         return user_id
-
+    
+    @abstractmethod
     def validate_headers(self, request_dict: dict):
+        """
+        ヘッダをバリデーションする。
+
+        Args:
+            request_dict (dict): API呼び出し時のリクエスト情報。
+        
+        Raises:
+            Exception: バリデーションに失敗した場合。
+            
+        """
         start = time.perf_counter()
         list(
             map(
@@ -154,10 +242,27 @@ class BaseRestApi(Base, ABC):
 
     @abstractmethod
     def validate_body(self, request_dict: dict):
+        """
+        ボディをバリデーションする。
+
+        Args:
+            request_dict (dict): API呼び出し時のリクエスト情報。
+
+        Raises:
+            Exception: バリデーションに失敗した場合。
+        """
         self._validate_body(request_dict["body"])
 
     def _validate_body(self, param):
-        """辞書・配列を再帰的にたどり、登録済みバリデータを実行する。"""
+        """
+        辞書・配列を再帰的にたどり、登録済みバリデータを実行する。
+
+        Args:
+            param: バリデーション対象の辞書または配列。
+
+        Raises:
+            Exception: バリデーションに失敗した場合。
+        """
         if isinstance(param, list):
             list(map(self._validate_body, param))
         elif isinstance(param, dict):
@@ -170,9 +275,27 @@ class BaseRestApi(Base, ABC):
 
     @abstractmethod
     def main(self, request_dict: dict) -> dict:
-        pass
+        """
+        APIのメイン処理を実装する。
 
+        Args:
+            request_dict (dict): API呼び出し時のリクエスト情報。
+
+        Returns:
+            dict: API呼び出しの結果を含む辞書。
+        """
+        pass
+    @abstractmethod
     def exception(self, e: Exception) -> dict:
+        """
+        例外処理を実装する。
+
+        Args:
+            e (Exception): 発生した例外。
+
+        Returns:
+            dict: 例外処理の結果を含む辞書。
+        """
         if isinstance(e, Error):
             self.logger.info(e)
             return e.response()
@@ -184,7 +307,17 @@ class BaseRestApi(Base, ABC):
         return Error(510, "1000062").response()
 
     def flatten_dict(self, nested_dict, parent_key="", sep="."):
-        """ネストした辞書をログや比較で扱いやすいフラットな辞書へ変換する。"""
+        """
+        ネストした辞書をログや比較で扱いやすいフラットな辞書へ変換する。
+
+        Args:
+            nested_dict (dict): ネストした辞書。
+            parent_key (str, optional): 親キーのプレフィックス。デフォルトは空文字。
+            sep (str, optional): キーの結合に使用するセパレータ。デフォルトはドット（"."）。
+
+        Returns:
+            dict: フラットな辞書。
+        """
         flattened = {}
         for key, value in nested_dict.items():
             if isinstance(value, dict):
@@ -194,6 +327,17 @@ class BaseRestApi(Base, ABC):
         return flattened
     
     def lambda_handler(self, event, context):
+        """
+        AWS Lambdaのハンドラ関数。
+        
+        Args:
+            event: Lambdaイベント。
+            context: Lambdaコンテキスト。
+            
+        Returns:
+            dict: Lambda関数のレスポンス。
+            
+        """
         if isinstance(event.get("body"), str):
                 body = json.loads(event.get("body") or "{}")
         else:
