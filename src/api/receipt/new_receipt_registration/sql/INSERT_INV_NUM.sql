@@ -2,18 +2,18 @@
 -- Copyright (c) 2026 Home Kakeibo System Contributors
 
 INSERT INTO invoice_registration (
-    CRE_PROG,
-    UPD_PROG,
-    INV_REG_NUM,
-    SUP_NAME,
-    TAX_FLAG,
-    CRE_DT,
-    CRE_TM,
-    UPD_DT,
-    UPD_TM,
-    CRE_USER_ID,
-    UPD_USER_ID,
-    DEL_FLAG
+    CRE_PROG, -- 登録プログラム
+    UPD_PROG, -- 更新プログラム
+    INV_REG_NUM, -- インボイス登録番号
+    SUP_NAME, -- 取引先名
+    TAX_FLAG, -- 税区分
+    CRE_DT, -- 登録日
+    CRE_TM, -- 登録時刻
+    UPD_DT, -- 更新日
+    UPD_TM, -- 更新時刻
+    CRE_USER_ID, -- 登録ユーザーID
+    UPD_USER_ID, -- 更新ユーザーID
+    DEL_FLAG -- 削除フラグ
 ) VALUES (
     %(CRE_PROG)s,
     %(UPD_PROG)s,

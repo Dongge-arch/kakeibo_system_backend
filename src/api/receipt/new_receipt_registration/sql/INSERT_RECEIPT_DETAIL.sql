@@ -2,27 +2,27 @@
 -- Copyright (c) 2026 Home Kakeibo System Contributors
 
 INSERT INTO receipt_detail (
-    CRE_PROG,
-    UPD_PROG,
-    RET_ID,
-    ITEM_NAME,
-    CAT1,
-    CAT2,
-    TAX_RATE,
-    QTY,
-    UT,
-    UT_PRE,
-    TO_PRE,
-    UT_TAX_EXCLUDED,
-    TO_TAX_EXCLUDED,
-    UT_TAX_INCLUDED,
-    TO_TAX_INCLUDED,
-    CRE_DT,
-    CRE_TM,
-    UPD_DT,
-    UPD_TM,
-    CRE_USER_ID,
-    UPD_USER_ID
+    CRE_PROG, -- 登録プログラム
+    UPD_PROG, -- 更新プログラム
+    RET_ID, -- 領収書ID
+    ITEM_NAME, -- 領収書明細品目名
+    CAT1, -- 領収書明細大分類
+    CAT2, -- 領収書明細中分類
+    TAX_RATE,  -- 領収書明細税率
+    QTY, -- 領収書明細数量
+    UT, -- 領収書明細単価
+    UT_PRE, -- 領収書明細単価（税抜）
+    TO_PRE, -- 領収書明細合計金額（税抜）
+    UT_TAX_EXCLUDED, -- 領収書明細単価（税抜）
+    TO_TAX_EXCLUDED, -- 領収書明細合計金額（税抜）
+    UT_TAX_INCLUDED, -- 領収書明細単価（税込）
+    TO_TAX_INCLUDED, -- 領収書明細合計金額（税込）
+    CRE_DT, -- 登録日
+    CRE_TM, -- 登録時刻
+    UPD_DT, -- 更新日
+    UPD_TM, -- 更新時刻
+    CRE_USER_ID, -- 登録ユーザーID
+    UPD_USER_ID -- 更新ユーザーID
 ) VALUES (
     %(CRE_PROG)s,
     %(UPD_PROG)s,
