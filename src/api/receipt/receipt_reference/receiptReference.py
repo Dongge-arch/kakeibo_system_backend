@@ -3,7 +3,9 @@
 # Copyright (c) 2026 Home Kakeibo System Contributors
 
 
-"""レシート情報の検索API。"""
+"""
+レシート情報の検索API。
+"""
 from typing import Dict, Any, Optional
 from src.common.base import BaseRestApi
 from src.common.functions.response import response
@@ -13,7 +15,10 @@ from src.api.receipt.supplierLogoStorage import SupplierLogoStorage
 
 
 class ReceiptReference(BaseRestApi):
-    """日付・時刻・金額・分類条件でレシートを検索するAPIクラス。"""
+    """
+    日付・時刻・金額・分類条件でレシートを検索するAPIクラス。
+
+    """
 
     def __init__(self ,db_path: Optional[str] = None):
         super().__init__(class_name=self.__class__.__name__,db_path = db_path or None)
@@ -31,11 +36,15 @@ class ReceiptReference(BaseRestApi):
     def main(self, request_dict: Dict[str, Any]) -> Dict[str, Any]:
         
         """
+        レシート検索APIのメイン処理。
         Args:
             request_dict (Dict[str, Any]): 正規化済みのリクエストコンテキスト。
 
         Returns:
-            Dict[str, Any]: 標準化されたAPIレスポンス。
+            receipt_details (List[Dict[str, Any | None]] | None): 検索条件に一致するレシート明細情報のリスト。各明細は辞書形式で返される。
+
+        Raises:
+            Error: バリデーションエラーやデータベース接続エラーなど
         """
 
 
@@ -159,20 +168,22 @@ class ReceiptReference(BaseRestApi):
         return super().exception(e)
 
     def select_receipt_info(self, receipt_id, time_sql, date_sql, inm_sql, receipt_amount_sql, params) -> Dict[str, Any]:
-        """ヘッダ条件に一致するレシート情報を取得する。"""
-        sql = """
-            SELECT DISTINCT
-                re.RET_ID,
-                re.INV_REG_NUM,
-                re.SUP_NAME,
-                re.RET_DT,
-                re.RET_TM,
-                re.TAX_FLAG,
-                re.TOA_PRICE
-            FROM receipt_info re
-            WHERE re.DEL_FLAG = 0
-              AND re.CRE_USER_ID = %(user_id)s
-                """
+        """
+            ヘッダ条件に一致するレシート情報を取得する。
+
+            Args:
+                receipt_id (str): レシートID。
+                time_sql (str): 時間の検索条件SQL。
+                date_sql (str): 日付の検索条件SQL。
+                inm_sql (str): 商品名の検索条件SQL。
+                receipt_amount_sql (str): レシート金額の検索条件SQL。
+                params (dict): SQLパラメータ。
+
+            Returns:
+                Dict[str, Any]: レシート情報の辞書。
+            """
+        
+        sql = self.database.read_sql("SELECT_DISTINCT_RECEIPT_INFO",location=__file__)
         
         if receipt_id:
             sql += " AND re.RET_ID = %(receipt_id)s "
@@ -201,8 +212,18 @@ class ReceiptReference(BaseRestApi):
         return rows
 
     def select_receipt_details(self, receipt_id_list: list, detail_price_sql: str, category_sql: str, params) -> list[Dict[str, Any]]:
-        """対象レシートIDに紐づく明細情報を検索条件付きで取得する。"""
+        """
+        対象レシートIDに紐づく明細情報を検索条件付きで取得する。
 
+        Args:
+            receipt_id_list (list): レシートIDのリスト。
+            detail_price_sql (str): 明細金額の検索条件SQL。
+            category_sql (str): カテゴリの検索条件SQL。
+            params (dict): SQLパラメータ。
+
+        Returns:
+            list[Dict[str, Any]]: 明細情報のリスト。
+        """
         if not receipt_id_list:
             return []
 
@@ -230,6 +251,12 @@ class ReceiptReference(BaseRestApi):
     def adding_time_conditions(self, body) -> tuple[str, dict]:
         """
         時刻の条件のSQLを生成する
+
+        Args:
+            body (dict): リクエストボディの辞書。
+
+        Returns:
+            tuple[str, dict]: SQL片と命名パラメータのタプル
         """
         start_time = body.get("timeFrom",None)
         over_time = body.get("timeTo",None)
@@ -251,6 +278,12 @@ class ReceiptReference(BaseRestApi):
     def adding_date_conditions(self, body) -> tuple[str, dict]:
         """
         日付の条件のSQLを生成する
+
+        Args:
+            body (dict): リクエストボディの辞書。
+
+        Returns:
+            tuple[str, dict]: SQL片と命名パラメータのタプル
         """
         start_date = body.get("dateFrom",None)
         over_date = body.get("dateTo",None)
@@ -271,7 +304,15 @@ class ReceiptReference(BaseRestApi):
     
         
     def adding_receipt_amount_conditions(self, body):
-        """レシート合計金額の検索条件をSQL片へ変換する。"""
+        """
+        レシート合計金額の検索条件をSQL片へ変換する。
+            
+        Args:
+            body (dict): リクエストボディの辞書。
+            
+        Returns:
+            tuple[str, dict]: SQL片と命名パラメータのタプル。
+        """
 
         def to_int(v):
             try:
@@ -301,8 +342,18 @@ class ReceiptReference(BaseRestApi):
         return "", params
         
     def adding_detail_amount_conditions(self, body) -> tuple[str, dict]:
-        """明細金額の検索条件をSQL片へ変換する。"""
+        """
+        明細金額の検索条件をSQL片へ変換する。
+        
+        Args:
+            body (dict): リクエストボディの辞書。
+            
+        Returns:
+            tuple[str, dict]: SQL片と命名パラメータのタプル。
+        """
 
+
+        # 文字列を整数に変換する内部関数
         def to_int(v):
             try:
                 return int(v)
@@ -335,7 +386,15 @@ class ReceiptReference(BaseRestApi):
     
 
     def adding_category_conditions(self, body:dict) -> tuple[str, dict]:
-        """大分類・小分類の検索条件をSQL片へ変換する。"""
+        """
+        大分類・小分類の検索条件をSQL片へ変換する。
+        
+        Args:
+            body (dict): リクエストボディの辞書。
+            
+        Returns:
+            tuple[str, dict]: SQL片と命名パラメータのタプル。
+        """
         sql=""
         params = {}
         if body.get("category1"):
@@ -348,7 +407,15 @@ class ReceiptReference(BaseRestApi):
         return sql, params
 
     def adding_address_and_inm_conditions(self, body:dict) -> tuple[str, dict]:
-        """店舗名とインボイス登録番号の検索条件をSQL片へ変換する。"""
+        """
+        店舗名とインボイス登録番号の検索条件をSQL片へ変換する。
+        
+        Args:
+            body (dict): リクエストボディの辞書。
+            
+        Returns:
+            tuple[str, dict]: SQL片と命名パラメータのタプル。
+        """
         sql = ""
         params = {}
         if body.get("invoiceRegistrationNumber"):

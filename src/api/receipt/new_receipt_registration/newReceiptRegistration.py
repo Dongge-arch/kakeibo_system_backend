@@ -278,10 +278,10 @@ class NewReceiptRegistration(BaseRestApi):
         self.logger.info(f"ユーザーIDの識別文字列: {user_fragment}")
 
         # 同一ユーザーの同一日付の最大receiptIDを取得する。
-        response = (self.database.select(
+        max_receipt_response = (self.database.select(
             sql, params={"receipt_id_date": f"{receipt_id_prefix}%", "USER_ID": user_id}))
-        if response:
-            max_receipt_id = response[0].get("receipt_id") if response else None
+        if max_receipt_response:
+            max_receipt_id = max_receipt_response[0].get("receipt_id") if max_receipt_response else None
         if max_receipt_id:
             self.logger.info(f"最大の領収書ID: {max_receipt_id}")
             #最大receiptIDの末尾の数字をインクリメント
