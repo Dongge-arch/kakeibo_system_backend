@@ -18,17 +18,39 @@ class BaseValidator(Base):
 
     def __init__(self, class_name):
         """
+        クラスを初期化する。
+
+        Args:
+            class_name (Any): class_nameの値。
+
+        Returns:
+            None: 戻り値なし。
         """
         if not self._initialized:
             super().__init__(class_name)
             self._initialized = True
 
     def __call__(self, **kwargs):
+        """
+        __call__の処理を実行する。
+
+        Args:
+            **kwargs: 追加のキーワード引数。
+
+        Returns:
+            Any: 処理結果。
+        """
         self.call(**kwargs)
 
     def call(self, **kwargs) -> dict:
         """
         チェックを行うメソッド
+
+        Args:
+            **kwargs: 追加のキーワード引数。
+
+        Returns:
+            dict: 処理結果。
         """
         try:
             self.main(**kwargs)
@@ -40,10 +62,17 @@ class BaseValidator(Base):
     @abstractmethod
     def main(self, **kwargs) -> dict:
         """
-        チェック定義
+        処理概要: バリデーションの主処理を定義する。
+        処理内容:
+          1. 入力値を受け取る。
+          2. 実装クラスで検証する。
+          3. 検証結果を返す。
 
         Args:
             **kwargs: チェックパラメータ
+
+        Returns:
+            dict: 処理結果。
 
         Raises:
             Error: チェックエラーがある場合の例外。エラーコードを返す。

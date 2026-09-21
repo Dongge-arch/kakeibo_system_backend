@@ -1,0 +1,10 @@
+UPDATE SALARY_INFO
+SET SAL_DATE = %(SAL_DATE)s,
+    SAL_NAME = %(SAL_NAME)s,
+    SAL_CAT = %(SAL_CAT)s,
+    SAL_AMT = %(SAL_AMT)s,
+    UPD_DT = %(UPD_DT)s,
+    UPD_TM = %(UPD_TM)s,
+    UPD_USER_ID = %(UPD_USER_ID)s,
+    DEL_FLAG = 0
+WHERE ID = %(ID)s AND CRE_USER_ID = %(CRE_USER_ID)s AND DEL_FLAG = 0

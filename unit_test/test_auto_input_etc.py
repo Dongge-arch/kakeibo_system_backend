@@ -1,16 +1,19 @@
 from pathlib import Path
+import pytest
 
 from bs4 import BeautifulSoup
 
-from src.batch.auto_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
+from src.batch.kakeibo.auto_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
 
 
 def test_parse_saved_etc_history():
-    html_path = next(
+    html_path = next((
         path
         for path in (Path.home() / "Desktop").glob("*.html")
         if path.stat().st_size == 51091
-    )
+    ), None)
+    if html_path is None:
+        pytest.skip("ETCの保存済みHTMLサンプルが見つかりません。")
     html = html_path.read_bytes()
     batch = AutoInput_Etc.__new__(AutoInput_Etc)
 
@@ -59,11 +62,13 @@ def test_group_etc_rows_by_date():
 
 
 def test_extract_saved_etc_page_urls():
-    html_path = next(
+    html_path = next((
         path
         for path in (Path.home() / "Desktop").glob("*.html")
         if path.stat().st_size == 51091
-    )
+    ), None)
+    if html_path is None:
+        pytest.skip("ETCの保存済みHTMLサンプルが見つかりません。")
     soup = BeautifulSoup(html_path.read_bytes(), "html.parser")
 
     urls = AutoInput_Etc.extract_page_urls(

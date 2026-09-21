@@ -1,0 +1,48 @@
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2026 Home Kakeibo System Contributors
+
+INSERT INTO RECEIPT_DETAIL (
+    CRE_PROG,
+    UPD_PROG,
+    RET_ID,
+    ITEM_NAME,
+    CAT1,
+    CAT2,
+    TAX_RATE,
+    QTY,
+    UT,
+    UT_PRE,
+    TO_PRE,
+    UT_TAX_EXCLUDED,
+    TO_TAX_EXCLUDED,
+    UT_TAX_INCLUDED,
+    TO_TAX_INCLUDED,
+    CRE_DT,
+    CRE_TM,
+    UPD_DT,
+    UPD_TM,
+    CRE_USER_ID,
+    UPD_USER_ID
+) VALUES (
+    %(CRE_PROG)s,
+    %(UPD_PROG)s,
+    %(RET_ID)s,
+    %(ITEM_NAME)s,
+    %(CAT1)s,
+    %(CAT2)s,
+    %(TAX_RATE)s,
+    %(QTY)s,
+    %(UT)s,
+    %(UT_PRE)s,
+    %(TO_PRE)s,
+    %(UT_TAX_EXCLUDED)s,
+    %(TO_TAX_EXCLUDED)s,
+    %(UT_TAX_INCLUDED)s,
+    %(TO_TAX_INCLUDED)s,
+    %(CRE_DT)s,
+    %(CRE_TM)s,
+    %(UPD_DT)s,
+    %(UPD_TM)s,
+    %(CRE_USER_ID)s,
+    %(UPD_USER_ID)s
+);

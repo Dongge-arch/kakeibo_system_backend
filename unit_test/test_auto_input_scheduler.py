@@ -1,8 +1,13 @@
-from src.batch.auto_input_scheduler import autoInputScheduler
+from pathlib import Path
+
+from src.batch.kakeibo.auto_input_scheduler import autoInputScheduler
 
 
 class FakeDatabase:
-    def select(self, _sql):
+    def read_sql(self, name, location=None):
+        return (Path(location).parent / "sql" / f"{name}.sql").read_text(encoding="utf-8")
+
+    def select(self, _sql, _params=None):
         return [{"CRE_USER_ID": "user-1", "CONNECTION_TYPE": "BELC"}]
 
 

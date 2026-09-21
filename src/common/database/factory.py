@@ -9,8 +9,17 @@ from src.common.config import APP_CONFIG
 from src.common.database.postgresql import Postgresql
 
 
-def create_database(db_path: Optional[str] = None):
-    """PostgreSQLアダプターを作成する。db_pathは旧呼び出し互換のため未使用。"""
+def create_database(db_path: Optional[str] = None, schema: str = "kakeibo"):
+    """
+    指定スキーマのPostgreSQLアダプターを作成する。
+
+    Args:
+        db_path (Optional[str]): 旧呼び出し互換のための未使用引数。
+        schema (str): 接続先スキーマ。
+
+    Returns:
+        Postgresql: 指定スキーマに接続したアダプター。
+    """
     _ = db_path
     database_config = APP_CONFIG.get("database", {}) or {}
     cloud_config = database_config.get("cloud", {}) or {}
@@ -28,4 +37,5 @@ def create_database(db_path: Optional[str] = None):
     return Postgresql(
         database_url=database_url,
         initialize_schema=initialize_schema,
+        schema=schema,
     )

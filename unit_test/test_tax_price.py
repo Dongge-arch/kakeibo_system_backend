@@ -1,4 +1,4 @@
-from src.api.receipt.taxPrice import enrich_detail_prices
+from src.api.kakeibo.receipt.taxPrice import enrich_detail_prices
 
 
 def test_tax_excluded_values_are_rebuilt_from_visible_fields():

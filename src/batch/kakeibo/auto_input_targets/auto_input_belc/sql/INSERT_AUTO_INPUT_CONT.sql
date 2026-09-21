@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2026 Home Kakeibo System Contributors
+
+INSERT INTO KAKEIBO.AUTO_INPUT_CONT (
+    CRE_PROG,
+    UPD_PROG,
+    INV_REG_NUM,
+    RET_CONT,
+    RET_DT,
+    RET_TM,
+    AUTO_INPUT_STATUS,
+    CONNECTION_TYPE,
+    SOURCE_KEY,
+    CRE_DT,
+    CRE_TM,
+    UPD_DT,
+    UPD_TM,
+    CRE_USER_ID,
+    UPD_USER_ID,
+    DEL_FLAG
+)
+SELECT
+    %(CRE_PROG)s,
+    %(UPD_PROG)s,
+    %(INV_REG_NUM)s,
+    %(RET_CONT)s,
+    %(RET_DT)s,
+    %(RET_TM)s,
+    %(AUTO_INPUT_STATUS)s,
+    %(CONNECTION_TYPE)s,
+    %(SOURCE_KEY)s,
+    %(CRE_DT)s,
+    %(CRE_TM)s,
+    %(UPD_DT)s,
+    %(UPD_TM)s,
+    %(CRE_USER_ID)s,
+    %(UPD_USER_ID)s,
+    %(DEL_FLAG)s
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM KAKEIBO.AUTO_INPUT_CONT
+    WHERE INV_REG_NUM = %(INV_REG_NUM)s
+      AND CRE_USER_ID = %(CRE_USER_ID)s
+      AND AUTO_INPUT_STATUS = %(AUTO_INPUT_STATUS)s
+      AND DEL_FLAG = 0
+      AND (
+          (SOURCE_KEY IS NOT NULL AND SOURCE_KEY <> '' AND SOURCE_KEY = %(SOURCE_KEY)s)
+          OR (
+              (SOURCE_KEY IS NULL OR SOURCE_KEY = '')
+              AND RET_DT = %(RET_DT)s
+              AND RET_TM = %(RET_TM)s
+              AND RET_CONT = %(RET_CONT)s
+          )
+      )
+);

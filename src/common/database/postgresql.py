@@ -5,10 +5,10 @@ import re
 import threading
 from typing import Any, Dict, List, Optional
 
-from src.common.base import Base
+from src.common.logging import Logging
 
 
-class PostgresqlRow(dict, Base):
+class PostgresqlRow(dict):
     _camel_aliases = {
         "analysisid": "analysisId",
         "aioutputjson": "aiOutputJson",
@@ -53,7 +53,6 @@ class PostgresqlRow(dict, Base):
     }
 
     def __init__(self, row: Dict[str, Any]):
-        Base.__init__(self, self.__class__.__name__)
         dict.__init__(self)
         normalized = {}
         for key, value in dict(row).items():
@@ -94,14 +93,17 @@ class PostgresqlRow(dict, Base):
         return default
 
 
-class Postgresql(Base):
+class Postgresql:
     _schema_lock = threading.Lock()
     _initialized_urls = set()
     _advisory_lock_id = 74060219849901
     _connect_retry_count = 20
 
-    def __init__(self, database_url: str, initialize_schema: bool = True) -> None:
-        super().__init__(self.__class__.__name__)
+    def __init__(self, database_url: str, initialize_schema: bool = True, schema: str = "kakeibo") -> None:
+        if schema not in {"kakeibo", "childcare", "meal"}:
+            raise ValueError("Unsupported PostgreSQL schema.")
+        self.logger = Logging(self.__class__.__name__)
+        self.schema = schema
         if not database_url:
             raise ValueError("PostgreSQL database url is required.")
 
@@ -113,7 +115,7 @@ class Postgresql(Base):
 
         if initialize_schema:
             self.initialize_schema_once(database_url)
-        self.connector.execute("SET search_path TO kakeibo")
+        self.connector.execute(f"SET search_path TO {schema}, kakeibo")
         self._pattern = re.compile(r":([a-zA-Z_][a-zA-Z0-9_]*)")
 
     def connect_with_retry(self, connect_func, database_url: str, dict_row):
@@ -129,20 +131,20 @@ class Postgresql(Base):
         raise last_error
 
     def read_sql(self, sqlname: str, location=None):
-        if self._sql_cache.get(sqlname):
-            return self._sql_cache.get(sqlname)
         if not location:
             path = os.path.join(os.path.dirname(__file__), "sql", f"{sqlname}.sql")
         else:
             path = os.path.join(os.path.dirname(location), "sql", f"{sqlname}.sql")
+        if path in self._sql_cache:
+            return self._sql_cache[path]
         with open(path, "r", encoding="utf-8") as file:
             sql = file.read()
-        self._sql_cache[sqlname] = sql
+        self._sql_cache[path] = sql
         return sql
 
     def __del__(self):
-        self.commit()
-        self.close()
+        if hasattr(self, "connector"):
+            self.close()
 
     def select(self, sql: str, params: Optional[Any] = None) -> List[Dict]:
         result = self.do_sql_with_retry(sql, params)
@@ -188,18 +190,24 @@ class Postgresql(Base):
         return int(getattr(result, "rowcount", 0) or 0)
 
     def initialize_schema_once(self, database_url: str) -> None:
-        if database_url in self._initialized_urls:
+        cache_key = (database_url, self.schema)
+        if cache_key in self._initialized_urls:
             return
         with self._schema_lock:
-            if database_url in self._initialized_urls:
+            if cache_key in self._initialized_urls:
                 return
             locked = False
             try:
                 self.connector.execute("SELECT pg_advisory_lock(%s)", (self._advisory_lock_id,))
                 locked = True
-                for statement in self.split_statements(self.read_sql("CREATE_TABLES_POSTGRES", location=__file__)):
+                sql_file = {
+                    "kakeibo": "CREATE_TABLES_POSTGRES",
+                    "childcare": "CREATE_TABLES_CHILDCARE_POSTGRES",
+                    "meal": "CREATE_TABLES_MEAL_POSTGRES",
+                }[self.schema]
+                for statement in self.split_statements(self.read_sql(sql_file, location=__file__)):
                     self.connector.execute(statement)
-                self._initialized_urls.add(database_url)
+                self._initialized_urls.add(cache_key)
             except Exception:
                 self.connector.rollback()
                 raise
@@ -234,10 +242,10 @@ class Postgresql(Base):
             """
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_schema = 'kakeibo'
+            WHERE table_schema = %(schema)s
               AND table_name = %(table)s
             """,
-            {"table": table.lower()},
+            {"table": table.lower(), "schema": self.schema},
         )
         return {str(row.get("column_name") or "").upper() for row in rows}
 
@@ -249,6 +257,30 @@ class Postgresql(Base):
             self.logger.warning(f"Failed to close PostgreSQL connection: {exc}", exc_info=True)
 
     def do_sql_with_retry(self, sql: str, params: Optional[Dict[str, Any]] = None):
+        if isinstance(params, dict):
+            # SQLファイルの列名表記へパラメータを揃え、既存の大小文字混在も吸収する。
+            lookup = {str(key).upper(): value for key, value in params.items()}
+            placeholders = set(re.findall(r"%\(([A-Za-z_][A-Za-z0-9_]*)\)s", sql))
+            legacy_keys = {
+                "CRE_PROG": "PROGRAM",
+                "UPD_PROG": "PROGRAM",
+                "AUTO_INPUT_STATUS": "STATUS",
+                "LAST_LOGIN_STATUS": "STATUS",
+                "LAST_LOGIN_DT": "DT",
+                "LAST_LOGIN_TM": "TM",
+                "SUICA_CHALLENGE_ID": "CHALLENGE_ID",
+                "SUICA_CHALLENGE_EXPIRES_AT": "EXPIRES_AT",
+                "SUICA_COOKIE_JSON": "COOKIE_JSON",
+                "SUICA_FORM_JSON": "FORM_JSON",
+                "SUICA_FORM_ACTION": "FORM_ACTION",
+            }
+            for name in placeholders:
+                if name not in lookup and name in {"CRE_USER_ID", "UPD_USER_ID", "OWNER_USER_ID"}:
+                    if "USER_ID" in lookup:
+                        lookup[name] = lookup["USER_ID"]
+                if name not in lookup and legacy_keys.get(name) in lookup:
+                    lookup[name] = lookup[legacy_keys[name]]
+            params = {name: lookup[name.upper()] for name in placeholders}
         last_error = None
         for attempt in range(1, self._connect_retry_count + 1):
             try:

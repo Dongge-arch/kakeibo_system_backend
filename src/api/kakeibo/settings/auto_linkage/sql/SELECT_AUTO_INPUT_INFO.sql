@@ -1,0 +1,6 @@
+SELECT * FROM AUTO_INPUT_INFO
+            WHERE CRE_USER_ID = %(CRE_USER_ID)s
+              AND DEL_FLAG = 0
+              AND (CONNECTION_TYPE = %(CONNECTION_TYPE)s OR UPPER(SUP_NAME) = %(CONNECTION_TYPE)s)
+            ORDER BY ID DESC
+            LIMIT 1

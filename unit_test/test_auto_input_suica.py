@@ -1,12 +1,16 @@
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.batch.auto_input_targets.auto_input_suica.autoInput_Suica import AutoInput_Suica
+from src.batch.kakeibo.auto_input_targets.auto_input_suica.autoInput_Suica import AutoInput_Suica
 
 
 def make_batch():
     batch = AutoInput_Suica.__new__(AutoInput_Suica)
     batch.database = MagicMock()
+    batch.database.read_sql.side_effect = lambda name, location=None: (
+        Path(location).parent / "sql" / f"{name}.sql"
+    ).read_text(encoding="utf-8")
     batch.logger = MagicMock()
     batch.connection_type = "SUICA"
     batch.supplier_name = "東日本旅客鉄道株式会社"
@@ -62,7 +66,7 @@ def test_duplicate_receipt_marks_staging_rows_and_continues():
 
     with (
         patch(
-            "src.batch.auto_input_targets.auto_input_suica.autoInput_Suica.NewReceiptRegistration",
+            "src.batch.kakeibo.auto_input_targets.auto_input_suica.autoInput_Suica.NewReceiptRegistration",
             return_value=registration_api,
         ),
     ):
@@ -95,7 +99,7 @@ def test_registered_receipt_is_removed_before_registration_api_call():
     registration_api = MagicMock()
 
     with patch(
-        "src.batch.auto_input_targets.auto_input_suica.autoInput_Suica.NewReceiptRegistration",
+        "src.batch.kakeibo.auto_input_targets.auto_input_suica.autoInput_Suica.NewReceiptRegistration",
         return_value=registration_api,
     ):
         registered, duplicates = batch.register_pending_expenses("user-1")
@@ -124,7 +128,7 @@ def test_same_staging_history_is_removed_before_total_calculation():
     registration_api.call.return_value = {"statusCode": 201, "body": {"receiptId": "receipt-1"}}
 
     with patch(
-        "src.batch.auto_input_targets.auto_input_suica.autoInput_Suica.NewReceiptRegistration",
+        "src.batch.kakeibo.auto_input_targets.auto_input_suica.autoInput_Suica.NewReceiptRegistration",
         return_value=registration_api,
     ):
         registered, duplicates = batch.register_pending_expenses("user-1")

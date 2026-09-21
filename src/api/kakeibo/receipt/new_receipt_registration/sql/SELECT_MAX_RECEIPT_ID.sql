@@ -1,0 +1,10 @@
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2026 Home Kakeibo System Contributors
+
+
+SELECT RET_ID AS RECEIPT_ID
+FROM RECEIPT_INFO
+WHERE RET_ID LIKE %(RET_ID)s
+  AND CRE_USER_ID = %(CRE_USER_ID)s
+ORDER BY RET_ID DESC
+LIMIT 1;

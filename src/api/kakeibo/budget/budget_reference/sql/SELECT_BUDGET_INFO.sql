@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2026 Home Kakeibo System Contributors
+
+SELECT
+CAT1 AS CATEGORY1,
+CAT2 AS CATEGORY2,
+BUT_AMT AS BUDGETAMOUNT
+FROM
+BUDGET_INFO
+WHERE
+CAT1 = %(CAT1)s
+AND
+CAT2 = %(CAT2)s
+AND
+CRE_USER_ID = %(CRE_USER_ID)s
+AND
+DEL_FLAG = 0

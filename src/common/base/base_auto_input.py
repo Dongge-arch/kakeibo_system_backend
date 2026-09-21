@@ -10,8 +10,8 @@ from datetime import datetime
 
 import requests
 
-from src.api.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
-from src.api.utils import now_ymd_hms
+from src.api.kakeibo.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
+from src.common.api_utils import now_ymd_hms
 from src.common.auth_context import reset_current_user_id, set_current_user_id
 from src.common.base.base_batch import BaseBatch
 from src.common.exception import Error
@@ -29,6 +29,9 @@ class BaseAutoInput(BaseBatch):
         Args:
             class_name (str): ログへ出力するクラス名。
             db_path (Optional[str]): ローカル実行時に使用するDBパス。
+
+        Returns:
+            None: 戻り値なし。
         """
         super().__init__(class_name=class_name, db_path=db_path or None)
         self._validate_headers_functions = {}
@@ -40,6 +43,9 @@ class BaseAutoInput(BaseBatch):
 
         Args:
             request_dict (dict): リクエスト情報。
+
+        Returns:
+            Any: 処理結果。
         """
         return super().validate_headers(request_dict)
 
@@ -49,6 +55,9 @@ class BaseAutoInput(BaseBatch):
 
         Args:
             request_dict (dict): リクエスト情報。
+
+        Returns:
+            Any: 処理結果。
         """
         return super().validate_body(request_dict)
 
@@ -143,14 +152,7 @@ class BaseAutoInput(BaseBatch):
             dict: 最新の自動入力設定。未登録の場合は空の辞書。
         """
         rows = self.database.select(
-            """
-            SELECT * FROM auto_input_info
-            WHERE CRE_USER_ID = %(USER_ID)s
-              AND CONNECTION_TYPE = %(CONNECTION_TYPE)s
-              AND DEL_FLAG = 0
-            ORDER BY id DESC
-            LIMIT 1
-            """,
+            self.database.read_sql("SELECT_AUTO_INPUT_INFO", location=__file__),
             {"USER_ID": user_id, "CONNECTION_TYPE": connection_type},
         )
         return rows[0] if rows else {}
@@ -206,17 +208,7 @@ class BaseAutoInput(BaseBatch):
         serialized = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, sort_keys=True)
         resolved_key = source_key or hashlib.sha256(serialized.encode("utf-8")).hexdigest()
         return self.database.insert(
-            """
-            INSERT INTO kakeibo.auto_input_cont (
-                CRE_PROG, UPD_PROG, INV_REG_NUM, RET_CONT, RET_DT, RET_TM,
-                AUTO_INPUT_STATUS, CONNECTION_TYPE, SOURCE_KEY,
-                CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID, DEL_FLAG
-            ) VALUES (
-                %(PROGRAM)s, %(PROGRAM)s, %(INV_REG_NUM)s, %(RET_CONT)s, %(RET_DT)s, %(RET_TM)s,
-                %(STATUS)s, %(CONNECTION_TYPE)s, %(SOURCE_KEY)s,
-                %(CRE_DT)s, %(CRE_TM)s, %(CRE_DT)s, %(CRE_TM)s, %(USER_ID)s, %(USER_ID)s, 0
-            )
-            """,
+            self.database.read_sql("INSERT_KAKEIBO_AUTO_INPUT_CONT", location=__file__),
             {
                 "PROGRAM": self.__class__.__name__,
                 "INV_REG_NUM": invoice_number,
@@ -254,7 +246,15 @@ class BaseAutoInput(BaseBatch):
 
     @staticmethod
     def normalize_auto_input_date(value):
-        """日付をYYYYMMDD形式へ変換する。"""
+        """
+        日付をYYYYMMDD形式へ変換する。
+
+        Args:
+            value (Any): valueの値。
+
+        Returns:
+            Any: 処理結果。
+        """
         text = str(value or "").strip()
         digits = "".join(character for character in text if character.isdigit())
         if len(digits) == 6:
@@ -263,6 +263,14 @@ class BaseAutoInput(BaseBatch):
 
     @staticmethod
     def normalize_auto_input_time(value):
-        """時刻をHHMMSS形式へ変換する。"""
+        """
+        時刻をHHMMSS形式へ変換する。
+
+        Args:
+            value (Any): valueの値。
+
+        Returns:
+            Any: 処理結果。
+        """
         digits = "".join(character for character in str(value or "") if character.isdigit())
         return (digits + "000000")[:6]

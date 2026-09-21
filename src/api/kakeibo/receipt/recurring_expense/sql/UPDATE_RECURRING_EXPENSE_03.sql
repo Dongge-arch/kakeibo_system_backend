@@ -1,0 +1,8 @@
+UPDATE RECURRING_EXPENSE
+SET LAST_RUN_MONTH = %(LAST_RUN_MONTH)s,
+    UPD_PROG = 'RecurringExpenseApi',
+    UPD_DT = %(UPD_DT)s,
+    UPD_TM = %(UPD_TM)s,
+    UPD_USER_ID = %(UPD_USER_ID)s
+WHERE ID = %(ID)s
+  AND CRE_USER_ID = %(CRE_USER_ID)s

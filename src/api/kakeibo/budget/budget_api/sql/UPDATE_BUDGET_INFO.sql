@@ -1,0 +1,8 @@
+UPDATE BUDGET_INFO
+SET BUT_AMT = %(BUT_AMT)s,
+    UPD_PROG = %(UPD_PROG)s,
+    UPD_DT = %(UPD_DT)s,
+    UPD_TM = %(UPD_TM)s,
+    UPD_USER_ID = %(UPD_USER_ID)s
+WHERE ID = %(ID)s
+  AND CRE_USER_ID = %(CRE_USER_ID)s

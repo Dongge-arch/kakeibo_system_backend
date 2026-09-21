@@ -1,6 +1,6 @@
-from src.api.receipt.ai_receipt.aiReceiptApi import AiReceiptApi
-from src.api.receipt.receiptValidation import validate_receipt_for_save
-from src.api.receipt.taxPrice import enrich_detail_prices, receipt_details_tax_included_total
+from src.api.kakeibo.receipt.ai_receipt.analyze.aiReceiptAnalyze import AiReceiptAnalyze
+from src.api.kakeibo.receipt.receiptValidation import validate_receipt_for_save
+from src.api.kakeibo.receipt.taxPrice import enrich_detail_prices, receipt_details_tax_included_total
 from src.common.exception import Error
 from src.common.log_sanitizer import sanitize_log_value
 
@@ -43,7 +43,7 @@ def test_tax_detail_total_uses_tax_included_total_first():
 
 
 def test_ai_reconcile_single_detail_to_header_total():
-    api = AiReceiptApi.__new__(AiReceiptApi)
+    api = AiReceiptAnalyze.__new__(AiReceiptAnalyze)
     body = {
         "receiptInfo": {
             "taxFlag": "1",

@@ -1,4 +1,4 @@
-from src.api.receipt.ai_receipt.receiptAnalyzer import (
+from src.api.kakeibo.receipt.ai_receipt.receiptAnalyzer import (
     APP_CONFIG,
     GeminiReceiptAnalyzer,
     is_non_item_detail,
