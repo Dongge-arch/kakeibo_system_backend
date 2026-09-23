@@ -8,13 +8,14 @@ ENV_FILE="${HOME_KAKEIBO_ENV_FILE:-/etc/home-kakeibo-batch.env}"
 PYTHON_BIN="${HOME_KAKEIBO_PYTHON:-python3}"
 
 cd "${APP_DIR}"
+mkdir -p "${APP_DIR}/logs"
 
 if [ ! -d ".venv" ]; then
   "${PYTHON_BIN}" -m venv .venv
 fi
 
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r lambda_api/requirements-layer.txt
+.venv/bin/python -m pip install -r deploy/armbian/requirements-batch.txt
 
 if [ ! -f "${ENV_FILE}" ]; then
   sudo install -m 600 -o root -g root deploy/armbian/home-kakeibo-batch.env.example "${ENV_FILE}"
@@ -36,7 +37,8 @@ User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=-${ENV_FILE}
-ExecStart=${APP_DIR}/.venv/bin/python -m src.batch.auto_input_scheduler.server_runner --connection-types BELC,ETC,AMAZON --schedule-name daily-midnight
+Environment=KAKEIBO_LOG_DIR=${APP_DIR}/logs
+ExecStart=/usr/bin/xvfb-run -a ${APP_DIR}/.venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner --connection-types NITORI,CAINZ,MUJI --schedule-name daily-midnight
 EOF
 
 sudo tee "${TIMER_FILE}" >/dev/null <<EOF

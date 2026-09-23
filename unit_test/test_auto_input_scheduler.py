@@ -39,3 +39,26 @@ def test_scheduler_counts_batch_body_failures_as_failed(monkeypatch):
     assert body["succeededCount"] == 0
     assert body["failedCount"] == 1
     assert body["results"][0]["statusCode"] == 200
+
+
+def test_scheduler_separates_aws_and_server_connections():
+    scheduler = autoInputScheduler.AutoInputScheduler.__new__(
+        autoInputScheduler.AutoInputScheduler
+    )
+
+    assert scheduler.resolve_target_connections({}) == ("BELC", "ETC")
+    assert scheduler.resolve_target_connections({"source": "armbian-server"}) == (
+        "NITORI",
+        "CAINZ",
+        "MUJI",
+    )
+
+
+def test_scheduler_accepts_server_batch_class_override(monkeypatch):
+    monkeypatch.setitem(autoInputScheduler.AUTO_INPUT_BATCHES, "NITORI", FakeBatch)
+    scheduler = autoInputScheduler.AutoInputScheduler.__new__(
+        autoInputScheduler.AutoInputScheduler
+    )
+
+    assert scheduler.batch_class_for("NITORI") is FakeBatch
+    assert scheduler.batch_class_for("UNKNOWN") is None

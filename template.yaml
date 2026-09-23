@@ -91,7 +91,6 @@ Globals:
 Resources:
   AutoInputScheduledFunction:
     Type: AWS::Serverless::Function
-    Condition: ScheduledAutoInputEnabled
     Properties:
       FunctionName: home-kakeibo-auto-input-scheduled
       Handler: lambda_handler.lambda_handler
@@ -112,14 +111,27 @@ Resources:
                   - s3:PutObject
                 Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
           - !Ref AWS::NoValue
-      Events:
-        DailyAutoInput:
-          Type: Schedule
-          Properties:
-            Name: home-kakeibo-auto-input-daily
-            Description: Run enabled BELC and ETC automatic imports every day.
-            Schedule: cron(0 15 * * ? *)
-            Enabled: !If [ScheduledAutoInputEnabled, true, false]
+
+  AutoInputScheduledRule:
+    Type: AWS::Events::Rule
+    Condition: ScheduledAutoInputEnabled
+    Properties:
+      Name: home-kakeibo-auto-input-daily
+      Description: Run enabled BELC and ETC automatic imports every day.
+      ScheduleExpression: cron(0 15 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AutoInputScheduledFunction.Arn
+          Id: HomeKakeiboAutoInputScheduledFunction
+
+  AutoInputScheduledPermission:
+    Type: AWS::Lambda::Permission
+    Condition: ScheduledAutoInputEnabled
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AutoInputScheduledFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AutoInputScheduledRule.Arn
 
   ReceiptExportFunction:
     Type: AWS::Serverless::Function
@@ -168,6 +180,9 @@ Resources:
       FunctionName: home-kakeibo-receipt-reference
       Handler: lambda_handler.lambda_handler
       CodeUri: dist_lambda/function/receipt_reference
+      Environment:
+        Variables:
+          SUPPLIER_LOGO_BULK_LOOKUP: "true"
       LoggingConfig:
         LogFormat: JSON
         LogGroup: !Ref ReceiptReferenceLogGroup
@@ -181,6 +196,15 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}"
+                Condition:
+                  StringLike:
+                    "s3:prefix":
+                      - supplier-logos
+                      - supplier-logos/*
           - !Ref AWS::NoValue
       Events:
         Api:
@@ -1156,6 +1180,9 @@ Resources:
       FunctionName: home-kakeibo-invoice-list
       Handler: lambda_handler.lambda_handler
       CodeUri: dist_lambda/function/invoice_list
+      Environment:
+        Variables:
+          SUPPLIER_LOGO_BULK_LOOKUP: "true"
       LoggingConfig:
         LogFormat: JSON
         LogGroup: !Ref InvoiceListLogGroup
@@ -1169,6 +1196,15 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${SupplierLogoBucketName}"
+                Condition:
+                  StringLike:
+                    "s3:prefix":
+                      - supplier-logos
+                      - supplier-logos/*
           - !Ref AWS::NoValue
       Events:
         Api:
@@ -1469,7 +1505,6 @@ Resources:
 
   AutoInputScheduledLogGroup:
     Type: AWS::Logs::LogGroup
-    Condition: ScheduledAutoInputEnabled
     Properties:
       LogGroupName: /home-kakeibo/batch/kakeibo/auto-input/auto-input-scheduled
       RetentionInDays: 30

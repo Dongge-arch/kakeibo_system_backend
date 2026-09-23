@@ -3,21 +3,23 @@
 
 """EventBridge から有効な自動入力サービスを実行するスケジューラ。"""
 
-from src.batch.kakeibo.auto_input_targets.auto_input_belc.autoInput_Belc import AutoInput_Belc
-from src.batch.kakeibo.auto_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
-from src.batch.kakeibo.auto_input_targets.auto_input_amazon.autoInput_Amazon import AutoInput_Amazon
+import importlib
+
 from src.common.base.base_auto_input import BaseAutoInput
 from src.common.functions.response import response
 
 
 AUTO_INPUT_BATCHES = {
-    "BELC": AutoInput_Belc,
-    "ETC": AutoInput_Etc,
-    "AMAZON": AutoInput_Amazon,
+    "BELC": "src.batch.kakeibo.auto_input_targets.auto_input_belc.autoInput_Belc:AutoInput_Belc",
+    "ETC": "src.batch.kakeibo.auto_input_targets.auto_input_etc.autoInput_Etc:AutoInput_Etc",
+    "AMAZON": "src.batch.kakeibo.auto_input_targets.auto_input_amazon.autoInput_Amazon:AutoInput_Amazon",
+    "NITORI": "src.batch.kakeibo.auto_input_targets.auto_input_nitori.autoInput_Nitori:AutoInput_Nitori",
+    "CAINZ": "src.batch.kakeibo.auto_input_targets.auto_input_cainz.autoInput_Cainz:AutoInput_Cainz",
+    "MUJI": "src.batch.kakeibo.auto_input_targets.auto_input_muji.autoInput_Muji:AutoInput_Muji",
 }
 
-DEFAULT_AUTO_INPUT_CONNECTIONS = ("BELC", "ETC")
-SERVER_AUTO_INPUT_CONNECTIONS = ("BELC", "ETC", "AMAZON")
+AWS_AUTO_INPUT_CONNECTIONS = ("BELC", "ETC")
+SERVER_AUTO_INPUT_CONNECTIONS = ("NITORI", "CAINZ", "MUJI")
 
 
 class AutoInputScheduler(BaseAutoInput):
@@ -65,7 +67,7 @@ class AutoInputScheduler(BaseAutoInput):
             connection_type = str(
                 self.value(row, "CONNECTION_TYPE", "connection_type") or ""
             ).upper()
-            batch_class = AUTO_INPUT_BATCHES.get(connection_type)
+            batch_class = self.batch_class_for(connection_type)
             if not user_id or batch_class is None:
                 continue
 
@@ -85,14 +87,19 @@ class AutoInputScheduler(BaseAutoInput):
                 )
             status_code = int(batch_result.get("statusCode", 500))
             body = batch_result.get("body") or {}
-            if connection_type == "BELC" and status_code == 503:
+            if status_code == 503:
                 unavailable_connections.add(connection_type)
             batch_failed_count = int(body.get("failed") or 0)
             batch_registered_count = int(body.get("registered") or 0)
             body_ok = body.get("ok")
-            # 2026-07-15 Codex: サーバー実行ではAmazon等の追加認証待ちを成功扱いにしないよう、ok=falseを失敗として集計する。
-            is_batch_success = status_code < 400 and body_ok is not False and (
-                batch_failed_count == 0 or batch_registered_count > 0
+            body_status = str(body.get("status") or "").upper()
+            auth_pending_statuses = {"OTP_REQUIRED", "MFA_REQUIRED", "CHALLENGE_REQUIRED"}
+            # 追加認証待ちはHTTP 200でも処理未完了として集計する。
+            is_batch_success = (
+                status_code < 400
+                and body_ok is not False
+                and body_status not in auth_pending_statuses
+                and (batch_failed_count == 0 or batch_registered_count > 0)
             )
             if is_batch_success:
                 succeeded += 1
@@ -125,11 +132,30 @@ class AutoInputScheduler(BaseAutoInput):
         if not requested:
             if body.get("source") == "armbian-server":
                 return SERVER_AUTO_INPUT_CONNECTIONS
-            return DEFAULT_AUTO_INPUT_CONNECTIONS
+            return AWS_AUTO_INPUT_CONNECTIONS
         if isinstance(requested, str):
             candidates = [value.strip().upper() for value in requested.split(",")]
         else:
             candidates = [str(value).strip().upper() for value in requested]
         # 2026-07-15 Codex: サーバー移行中も未対応の連携種別を誤実行しないよう、実装済みバッチだけに絞る。
         filtered = tuple(value for value in candidates if value in AUTO_INPUT_BATCHES)
-        return filtered or DEFAULT_AUTO_INPUT_CONNECTIONS
+        return filtered or AWS_AUTO_INPUT_CONNECTIONS
+
+    def batch_class_for(self, connection_type):
+        """
+        連携種別に対応するバッチクラスを必要になった時点で読み込む。
+
+        Args:
+            connection_type (str): 連携種別。
+
+        Returns:
+            Optional[type]: バッチクラス。未対応の場合はNone。
+        """
+        batch_entry = AUTO_INPUT_BATCHES.get(connection_type)
+        if not isinstance(batch_entry, str):
+            return batch_entry
+
+        module_name, class_name = batch_entry.split(":", 1)
+        batch_class = getattr(importlib.import_module(module_name), class_name)
+        AUTO_INPUT_BATCHES[connection_type] = batch_class
+        return batch_class

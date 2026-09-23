@@ -28,6 +28,7 @@ SUPPORTED_PLACES = (
         "historyName": "ベルク購入履歴",
         "supportStatus": "supported",
         "automationMode": "automatic",
+        "executionLocation": "aws",
     },
     {
         "connectionType": "SUICA",
@@ -48,6 +49,7 @@ SUPPORTED_PLACES = (
         "historyName": "ETC利用明細",
         "supportStatus": "supported",
         "automationMode": "automatic",
+        "executionLocation": "aws",
     },
     {
         "connectionType": "PASMO",
@@ -148,6 +150,7 @@ SUPPORTED_PLACES = (
         "historyName": "Amazon注文履歴",
         "supportStatus": "supported",
         "automationMode": "manual",
+        "executionLocation": "aws",
     },
     {
         "connectionType": "RAKUTEN",
@@ -162,12 +165,35 @@ SUPPORTED_PLACES = (
     {
         "connectionType": "NITORI",
         "supplierName": "株式会社ニトリ",
-        "invoiceRegistrationNumber": "",
+        "invoiceRegistrationNumber": "NITORI",
         "group": "shopping",
-        "displayName": "Nitori",
-        "historyName": "Nitori購入履歴",
-        "supportStatus": "planned",
-        "automationMode": "planned",
+        "displayName": "ニトリ",
+        "historyName": "ニトリ注文履歴",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "server",
+    },
+    {
+        "connectionType": "CAINZ",
+        "supplierName": "株式会社カインズ",
+        "invoiceRegistrationNumber": "CAINZ",
+        "group": "shopping",
+        "displayName": "CAINZ",
+        "historyName": "CAINZ注文履歴",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "server",
+    },
+    {
+        "connectionType": "MUJI",
+        "supplierName": "株式会社良品計画",
+        "invoiceRegistrationNumber": "MUJI",
+        "group": "shopping",
+        "displayName": "無印良品",
+        "historyName": "無印良品注文履歴",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "server",
     },
     {
         "connectionType": "YAHOO_SHOPPING",
@@ -459,7 +485,7 @@ class AutoLinkageBase(BaseRestApi):
             Any: 処理結果。
         """
         place = self.require_place(body)
-        if place["connectionType"] not in SUPPORTED_RUN_CONNECTIONS:
+        if place.get("supportStatus") != "supported":
             return self.not_implemented_response(place)
         row = self.find_row(place["connectionType"], user_id)
         if row:
@@ -749,6 +775,27 @@ class AutoLinkageBase(BaseRestApi):
                 "loginUrl": "https://www.amazon.co.jp/",
                 "historyName": "Amazon注文履歴",
                 "historyUrl": "https://www.amazon.co.jp/gp/css/order-history?ref_=nav_orders_first",
+            }
+        if connection_type == "NITORI":
+            return {
+                "loginName": "ニトリ ログイン",
+                "loginUrl": "https://www.nitori-net.jp/ec/login",
+                "historyName": "ニトリ注文履歴",
+                "historyUrl": "https://www.nitori-net.jp/ec/my-account/orders",
+            }
+        if connection_type == "CAINZ":
+            return {
+                "loginName": "CAINZ ログイン",
+                "loginUrl": "https://www.cainz.com/signin/?from=order-history",
+                "historyName": "CAINZ注文履歴",
+                "historyUrl": "https://www.cainz.com/mypage/order-history/",
+            }
+        if connection_type == "MUJI":
+            return {
+                "loginName": "無印良品 ログイン",
+                "loginUrl": "https://login-jp.muji.com/login",
+                "historyName": "無印良品注文履歴",
+                "historyUrl": "https://www.muji.com/jp/ja/store/cust/order/itemlist?web_store=my_menu_mem_list-orders",
             }
         place = next((item for item in SUPPORTED_PLACES if item["connectionType"] == connection_type), None)
         if place:

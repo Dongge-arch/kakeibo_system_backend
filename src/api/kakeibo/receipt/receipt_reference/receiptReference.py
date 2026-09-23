@@ -243,12 +243,12 @@ class ReceiptReference(BaseRestApi):
         Returns:
             list[Dict[str, Any]]: 処理結果。
         """
-        logo_cache = {}
+        logo_cache = self.logo_storage.urls_for(
+            row.get("INV_REG_NUM") for row in rows
+        )
         for row in rows:
             invoice_number = row.get("INV_REG_NUM")
-            if invoice_number not in logo_cache:
-                logo_cache[invoice_number] = self.logo_storage.url_for(invoice_number)
-            row["SUPPLIER_LOGO"] = logo_cache[invoice_number]
+            row["SUPPLIER_LOGO"] = logo_cache.get(invoice_number, "")
         
         return rows
 

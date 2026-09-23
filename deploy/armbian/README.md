@@ -4,18 +4,27 @@ Amazon / Belc など Lambda からアクセスしにくい連携を、Armbian �
 
 ## 仕組み
 
-- 実行入口: `python -m src.batch.auto_input_scheduler.server_runner`
-- 対象: `BELC,ETC,AMAZON`
+- 実行入口: `python -m src.batch.kakeibo.auto_input_scheduler.server_runner`
+- 対象: `NITORI,CAINZ,MUJI`
 - 認証情報: クラウドDBの `kakeibo.auto_input_info` から取得
 - 保存先: 既存 batch と同じクラウドDB
-- 定期実行: systemd timer で毎日 `00:00`
+- 定期実行: ユーザーの cron で毎日 `00:00`
+- ログ: サーバー内の `logs/home-kakeibo.log` と `logs/auto-input-runner.log`
+
+BELC / ETC は AWS Lambda 側で実行し、AWS IPやブラウザ制約のあるサービスだけを Armbian で実行します。業務コードはどちらも同じ `src/batch/kakeibo` を使用します。
 
 ## 配置
 
-Windows 側から実行します。
+macOS から実行します。
+
+```bash
+./deploy/armbian/deploy_armbian_batch.sh
+```
+
+Windows 側からは PowerShell 版を使用します。
 
 ```powershell
-.\deploy\armbian\deploy_armbian_batch.ps1 -HostAlias pi -RemoteDir /opt/home-kakeibo-batch
+.\deploy\armbian\deploy_armbian_batch.ps1 -HostAlias kakeibo-server -RemoteDir /home/armbian/home-kakeibo-batch -NoSudo
 ```
 
 初回だけ Armbian 側の `/etc/home-kakeibo-batch.env` にクラウドDB接続情報を設定してください。
@@ -23,8 +32,8 @@ Windows 側から実行します。
 ## 手動実行
 
 ```bash
-cd /opt/home-kakeibo-batch
-.venv/bin/python -m src.batch.auto_input_scheduler.server_runner --connection-types BELC,ETC,AMAZON
+cd /home/armbian/home-kakeibo-batch
+xvfb-run -a .venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner --connection-types NITORI,CAINZ,MUJI
 ```
 
 ## 今後の拡張

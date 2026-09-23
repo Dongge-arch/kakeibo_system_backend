@@ -15,7 +15,7 @@ if [ ! -d ".venv" ]; then
 fi
 
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r lambda_api/requirements-layer.txt
+.venv/bin/python -m pip install -r deploy/armbian/requirements-batch.txt
 
 if [ ! -f "${ENV_FILE}" ]; then
   cp deploy/armbian/home-kakeibo-batch.env.example "${ENV_FILE}"
@@ -31,7 +31,20 @@ cd "${APP_DIR}"
 set -a
 [ -f "${ENV_FILE}" ] && . "${ENV_FILE}"
 set +a
-.venv/bin/python -m src.batch.auto_input_scheduler.server_runner --connection-types BELC,ETC,AMAZON --schedule-name daily-midnight >> "${LOG_DIR}/auto-input.log" 2>&1
+export KAKEIBO_LOG_DIR="${LOG_DIR}"
+
+RUNNER_LOG="${LOG_DIR}/auto-input-runner.log"
+if [ -f "\${RUNNER_LOG}" ] && [ "\$(wc -c < "\${RUNNER_LOG}")" -ge 1048576 ]; then
+  mv -f "\${RUNNER_LOG}.2" "\${RUNNER_LOG}.3" 2>/dev/null || true
+  mv -f "\${RUNNER_LOG}.1" "\${RUNNER_LOG}.2" 2>/dev/null || true
+  mv -f "\${RUNNER_LOG}" "\${RUNNER_LOG}.1"
+fi
+
+exec 9>"${APP_DIR}/.auto-input.lock"
+flock -n 9 || exit 0
+xvfb-run -a .venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner \
+  --connection-types NITORI,CAINZ,MUJI \
+  --schedule-name daily-midnight >> "\${RUNNER_LOG}" 2>&1
 EOF
 chmod +x "${RUN_SCRIPT}"
 

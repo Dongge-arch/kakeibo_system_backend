@@ -7,7 +7,10 @@ import argparse
 import json
 import sys
 
-from src.batch.kakeibo.auto_input_scheduler.autoInputScheduler import AutoInputScheduler
+from src.batch.kakeibo.auto_input_scheduler.autoInputScheduler import (
+    AutoInputScheduler,
+    SERVER_AUTO_INPUT_CONNECTIONS,
+)
 
 
 def parse_args():
@@ -17,8 +20,8 @@ def parse_args():
     )
     parser.add_argument(
         "--connection-types",
-        default="BELC,ETC,AMAZON",
-        help="実行対象の連携種別。例: BELC,ETC,AMAZON",
+        default=",".join(SERVER_AUTO_INPUT_CONNECTIONS),
+        help="実行対象の連携種別。例: NITORI,CAINZ,MUJI",
     )
     parser.add_argument(
         "--schedule-name",

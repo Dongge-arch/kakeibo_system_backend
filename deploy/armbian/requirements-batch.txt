@@ -1,0 +1,2 @@
+-r ../../lambda_api/requirements-layer.txt
+playwright==1.62.0

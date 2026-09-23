@@ -302,7 +302,10 @@ class MasterDataBase(BaseRestApi):
             self.database.read_sql("SELECT_INVOICE_REGISTRATION_02", location=__file__),
             {"USER_ID": user_id},
         )
-        return response(200, [self.invoice_response(row) for row in rows])
+        logo_urls = self.logo_storage.urls_for(
+            row.get("INV_REG_NUM") for row in rows
+        )
+        return response(200, [self.invoice_response(row, logo_urls) for row in rows])
 
     def delete_invoice(self, body, user_id):
         """
@@ -351,17 +354,23 @@ class MasterDataBase(BaseRestApi):
         )
         return response(200, [self.invoice_response(row) for row in rows])
 
-    def invoice_response(self, row):
+    def invoice_response(self, row, logo_urls=None):
         """
         DB行を画面で扱うインボイス項目名へ変換する。
 
         Args:
             row (Any): rowの値。
+            logo_urls (Optional[dict]): 事前取得済みの店舗ロゴURL。
 
         Returns:
             Any: 処理結果。
         """
-        supplier_logo = self.logo_storage.url_for(row.get("INV_REG_NUM"))
+        invoice_number = row.get("INV_REG_NUM")
+        supplier_logo = (
+            logo_urls.get(invoice_number, "")
+            if logo_urls is not None
+            else self.logo_storage.url_for(invoice_number)
+        )
         return {
             "invoiceRegistrationNumber": row.get("INV_REG_NUM"),
             "supplierImage": supplier_logo,

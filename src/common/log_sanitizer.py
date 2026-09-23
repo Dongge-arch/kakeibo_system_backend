@@ -67,3 +67,74 @@ def sanitize_log_value(value, key: str = ""):
             return f"[OMITTED length={len(value)}]"
 
     return value
+
+
+def summarize_request_headers(headers: dict) -> dict:
+    """
+    リクエストヘッダーを値ではなく診断用メタ情報へ変換する。
+
+    Args:
+        headers (dict): 正規化済みリクエストヘッダー。
+
+    Returns:
+        dict: ヘッダー名、送信元、本文長を含む要約。
+    """
+    return {
+        "headerNames": sorted(str(key) for key in (headers or {})),
+        "origin": str((headers or {}).get("origin") or ""),
+        "contentLength": str((headers or {}).get("content-length") or ""),
+    }
+
+
+def summarize_request_body(body: dict) -> dict:
+    """
+    リクエスト本文を値を含まない診断用メタ情報へ変換する。
+
+    Args:
+        body (dict): リクエスト本文。
+
+    Returns:
+        dict: actionと本文キーを含む要約。
+    """
+    if not isinstance(body, dict):
+        return {"bodyType": type(body).__name__}
+    return {
+        "action": body.get("action"),
+        "bodyKeys": sorted(str(key) for key in body),
+    }
+
+
+def summarize_response(response: dict) -> dict:
+    """
+    APIレスポンスをステータス、件数、エラー情報だけのログへ変換する。
+
+    Args:
+        response (dict): APIレスポンス。
+
+    Returns:
+        dict: 大容量明細や個人情報を除いたレスポンス要約。
+    """
+    if not isinstance(response, dict):
+        return {"responseType": type(response).__name__}
+
+    status_code = response.get("statusCode")
+    body = response.get("body")
+    summary = {"statusCode": status_code}
+    if isinstance(body, list):
+        summary["bodyCount"] = len(body)
+        return summary
+    if not isinstance(body, dict):
+        return summary
+
+    for key, value in body.items():
+        normalized_key = str(key).lower()
+        if normalized_key.endswith("count") or key in {"ok", "status", "errorCode"}:
+            summary[key] = sanitize_log_value(value, key)
+        elif isinstance(value, list):
+            summary[f"{key}Count"] = len(value)
+
+    if isinstance(status_code, int) and status_code >= 400:
+        for key in ("errorMessage", "message"):
+            if body.get(key):
+                summary[key] = sanitize_log_value(body.get(key), key)
+    return summary

@@ -1,6 +1,6 @@
 param(
-    [string]$HostAlias = "pi",
-    [string]$RemoteDir = "/opt/home-kakeibo-batch",
+    [string]$HostAlias = "kakeibo-server",
+    [string]$RemoteDir = "/home/armbian/home-kakeibo-batch",
     [string]$ArchivePath = "$env:TEMP\home-kakeibo-batch.tar.gz",
     [switch]$NoSudo
 )
@@ -22,6 +22,7 @@ if (Test-Path $ArchivePath) {
     lambda_api/requirements-layer.txt `
     deploy/armbian/install_batch.sh `
     deploy/armbian/install_batch_user.sh `
+    deploy/armbian/requirements-batch.txt `
     deploy/armbian/home-kakeibo-batch.env.example `
     deploy/armbian/README.md
 

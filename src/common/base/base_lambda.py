@@ -19,7 +19,11 @@ from src.common.const.datetime import TIME_ZONE_JST
 from src.common.const.logger import REQUEST_BODY, REQUEST_HEADER, RESULT
 from src.common.database.factory import create_database
 from src.common.exception import Error
-from src.common.log_sanitizer import sanitize_log_value
+from src.common.log_sanitizer import (
+    summarize_request_body,
+    summarize_request_headers,
+    summarize_response,
+)
 
 
 class BaseLambda(Base, ABC):
@@ -155,21 +159,18 @@ class BaseLambda(Base, ABC):
             **kwargs,
         }
         request_id = kwargs.get("request_id") or uuid.uuid4().hex
-        private_domain = getattr(self.database, "schema", None) in {"childcare", "meal"}
-
         try:
             self.logger.set_request_id(request_id)
             self.logger.info(
                 "%s: %s",
                 REQUEST_HEADER,
-                json.dumps(sanitize_log_value(request_dict["headers"]), ensure_ascii=False),
+                json.dumps(summarize_request_headers(request_dict["headers"]), ensure_ascii=False),
             )
             self.logger.info(
                 "%s: %s",
                 REQUEST_BODY,
                 json.dumps(
-                    {"action": request_dict["body"].get("action")} if private_domain
-                    else sanitize_log_value(request_dict["body"]),
+                    summarize_request_body(request_dict["body"]),
                     ensure_ascii=False,
                     default=str,
                 ),
@@ -188,8 +189,7 @@ class BaseLambda(Base, ABC):
                 "%s: %s",
                 RESULT,
                 json.dumps(
-                    {"statusCode": response.get("statusCode")} if private_domain
-                    else sanitize_log_value(response),
+                    summarize_response(response),
                     ensure_ascii=False,
                     default=str,
                 ),
@@ -205,8 +205,7 @@ class BaseLambda(Base, ABC):
                 "%s: %s",
                 RESULT,
                 json.dumps(
-                    {"statusCode": response.get("statusCode")} if private_domain
-                    else sanitize_log_value(response),
+                    summarize_response(response),
                     ensure_ascii=False,
                     default=str,
                 ),

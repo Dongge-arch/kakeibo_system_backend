@@ -16,7 +16,12 @@ def _is_aws_lambda() -> bool:
 
 
 def _configure_local_file_handlers() -> None:
-    log_dir = Path(__file__).resolve().parents[3] / "log"
+    configured_log_dir = str(os.environ.get("KAKEIBO_LOG_DIR") or "").strip()
+    log_dir = (
+        Path(configured_log_dir).expanduser()
+        if configured_log_dir
+        else Path(__file__).resolve().parents[3] / "log"
+    )
     log_dir.mkdir(parents=True, exist_ok=True)
 
     for handler in APP_CONFIG.get("logging", {}).get("handlers", {}).values():
