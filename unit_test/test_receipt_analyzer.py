@@ -6,6 +6,16 @@ from src.api.kakeibo.receipt.ai_receipt.receiptAnalyzer import (
 )
 
 
+class FakeGeminiResponse:
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self.body = body
+        self.ok = 200 <= status_code < 300
+
+    def json(self):
+        return self.body
+
+
 def categories():
     return {
         "category1": [
@@ -172,6 +182,26 @@ def test_gemini_api_key_can_be_loaded_from_gemini_api_key_config(monkeypatch):
     analyzer = GeminiReceiptAnalyzer()
 
     assert analyzer.api_key == "from-config"
+
+
+def test_gemini_bad_request_returns_safe_detail_without_retry(monkeypatch):
+    analyzer = GeminiReceiptAnalyzer(api_key="secret-key")
+    calls = []
+
+    def fake_post(url, json, timeout):
+        calls.append((url, json, timeout))
+        return FakeGeminiResponse(400, {"error": {"message": "Invalid image data."}})
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    try:
+        analyzer.generate_content([{"text": "test"}])
+        assert False, "Gemini 400 must raise an error."
+    except RuntimeError as error:
+        assert str(error) == "Gemini API error (400): Invalid image data."
+        assert "secret-key" not in str(error)
+
+    assert len(calls) == 1
 
 
 def test_loads_ai_json_repairs_trailing_commas():

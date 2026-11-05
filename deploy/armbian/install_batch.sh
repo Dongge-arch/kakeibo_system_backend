@@ -38,7 +38,7 @@ Group=${SERVICE_GROUP}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=-${ENV_FILE}
 Environment=KAKEIBO_LOG_DIR=${APP_DIR}/logs
-ExecStart=/usr/bin/xvfb-run -a ${APP_DIR}/.venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner --connection-types NITORI,CAINZ,MUJI --schedule-name daily-midnight
+ExecStart=/usr/bin/xvfb-run -a ${APP_DIR}/.venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner --connection-types BELC,AMAZON,NITORI,CAINZ,MUJI --schedule-name daily-midnight
 EOF
 
 sudo tee "${TIMER_FILE}" >/dev/null <<EOF

@@ -6,7 +6,8 @@
 
 import json
 import uuid
-from datetime import date, datetime, timezone
+from calendar import monthrange
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from src.common.functions.response import response
@@ -16,7 +17,7 @@ from src.common.base import BaseRestApi
 class BabyBase(BaseRestApi):
     """家族メンバーに限った育児情報の共通処理。"""
 
-    EVENT_TYPES = {"feed", "diaper", "temperature", "sleep", "growth", "note"}
+    EVENT_TYPES = {"feed", "diaper", "temperature", "sleep", "bath", "growth", "note"}
 
     def __init__(self, db_path=None):
         """
@@ -125,13 +126,16 @@ class BabyBase(BaseRestApi):
         baby_id = str(baby.get("babyId") or "")
         family_id = str(baby.get("familyId") or "")
         name = str(baby.get("name") or "").strip()[:80]
-        birthday = str(baby.get("birthDate") or "")
+        birthday = str(baby.get("birthDate") or "").strip()
+        if not name:
+            return response(400, {"errorMessage": "名前を入力してください。", "validationField": "name"})
+        if not birthday:
+            return response(400, {"errorMessage": "生年月日を入力してください。", "validationField": "birthDate"})
         try:
             parsed = date.fromisoformat(birthday)
         except ValueError:
-            return response(400, {"errorMessage": "生年月日を確認してください。"})
-        if not name or parsed > date.today():
-            return response(400, {"errorMessage": "名前と生年月日を確認してください。"})
+            return response(400, {"errorMessage": "生年月日の形式を確認してください。", "validationField": "birthDate"})
+        # 2026-09-30 Codex: 出産前から記録を準備できるよう、予定日として未来日も許可する。
         if not self.is_member(user_id, family_id):
             return response(403, {"errorMessage": "家族へのアクセス権がありません。"})
         values = {"BABY_ID": baby_id or uuid.uuid4().hex, "FAMILY_ID": family_id,
@@ -191,8 +195,49 @@ class BabyBase(BaseRestApi):
              "HAPPENED_AT": str(day)},
         )
         events = [self.event_from_row(row) for row in rows]
+        summary = self.summarize_events(events)
+        return response(200, {"events": events, "summary": summary})
+
+    def list_month_events(self, baby, month):
+        """指定月の記録件数と種類を日単位で返す。
+
+        2026-09-30 Codex: 画面側で日数分のAPIを呼ばずに済むよう月単位で集約する。
+        """
+        try:
+            first_day = date.fromisoformat(f"{str(month)}-01")
+            last_day = first_day.replace(day=monthrange(first_day.year, first_day.month)[1])
+        except ValueError:
+            return response(400, {"errorMessage": "年月を確認してください。"})
+        rows = self.database.select(
+            self.database.read_sql("SELECT_BABY_EVENT_RANGE", location=__file__),
+            {
+                "BABY_ID": baby["BABY_ID"],
+                "FAMILY_ID": baby["FAMILY_ID"],
+                "START_DAY": first_day.isoformat(),
+                "END_DAY": (last_day + timedelta(days=1)).isoformat(),
+            },
+        )
+        grouped = {}
+        for row in rows:
+            event = self.event_from_row(row)
+            day_key = event["happenedAt"][:10]
+            grouped.setdefault(day_key, []).append(event)
+        days = [
+            {
+                "date": day_key,
+                "count": len(events),
+                "eventTypes": list(dict.fromkeys(event["type"] for event in events)),
+                "summary": self.summarize_events(events),
+            }
+            for day_key, events in sorted(grouped.items())
+        ]
+        return response(200, {"month": str(month), "days": days})
+
+    @staticmethod
+    def summarize_events(events):
+        """育児記録から日次・月次表示で共通利用する集計を作る。"""
         summary = {"feeds": 0, "milkMl": 0, "wet": 0, "stool": 0, "sleepMinutes": 0,
-                   "temperatures": []}
+                   "baths": 0, "temperatures": []}
         for event in events:
             data = event["data"]
             if event["type"] == "feed":
@@ -203,9 +248,11 @@ class BabyBase(BaseRestApi):
                 summary["stool"] += data.get("kind") in ("stool", "both")
             elif event["type"] == "sleep":
                 summary["sleepMinutes"] += int(data.get("durationMin") or 0)
+            elif event["type"] == "bath":
+                summary["baths"] += 1
             elif event["type"] == "temperature":
                 summary["temperatures"].append(data.get("temperatureC"))
-        return response(200, {"events": events, "summary": summary})
+        return summary
 
     def save_event(self, user_id, baby, event):
         """
@@ -299,6 +346,11 @@ class BabyBase(BaseRestApi):
             return "体温を確認してください。"
         if event_type == "sleep" and not numeric("durationMin", 1, 1440):
             return "睡眠時間を確認してください。"
+        if event_type == "bath":
+            if not numeric("durationMin", 1, 180, False):
+                return "入浴時間を確認してください。"
+            if not numeric("waterTempC", 20, 50, False):
+                return "お湯の温度を確認してください。"
         if event_type == "growth" and not (numeric("weightKg", 0.1, 100, False)
                                                and numeric("lengthCm", 20, 200, False)):
             return "体重または身長を確認してください。"

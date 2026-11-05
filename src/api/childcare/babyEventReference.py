@@ -23,4 +23,7 @@ class BabyEventReference(BabyBase):
         _, baby, error = self.authorized_event_request(request_dict)
         if error:
             return error
-        return self.list_events(baby, (request_dict.get("body") or {}).get("day"))
+        body = request_dict.get("body") or {}
+        if body.get("month"):
+            return self.list_month_events(baby, body.get("month"))
+        return self.list_events(baby, body.get("day"))

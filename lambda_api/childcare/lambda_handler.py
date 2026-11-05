@@ -28,6 +28,9 @@ def lambda_handler(event, context):
     """
     path = (event.get("rawPath") or event.get("path") or "").rstrip("/")
     method = (event.get("requestContext", {}).get("http", {}).get("method") or event.get("httpMethod") or "").upper()
+    # ANY ルートで Lambda へ到達する CORS プリフライトは認証や業務ルーティングの前に完了させる。
+    if method == "OPTIONS":
+        return {"statusCode": 204, "body": ""}
     raw = event.get("body") or {}
     body = json.loads(raw) if isinstance(raw, str) else dict(raw)
     parts = path.strip("/").split("/")
@@ -57,7 +60,9 @@ def lambda_handler(event, context):
         api = BabyEventReference if method == "GET" else BabyEventRegistration
         body.update(action="list_events" if method == "GET" else "save_event", babyId=parts[2])
         if method == "GET":
-            body["day"] = (event.get("queryStringParameters") or {}).get("day")
+            query = event.get("queryStringParameters") or {}
+            body["day"] = query.get("day")
+            body["month"] = query.get("month")
         else:
             body["event"] = {**body.get("event", {}), "babyId": parts[2]}
     elif len(parts) == 5 and parts[:2] == ["childcare", "babies"] and parts[3] == "events" and method in {"PUT", "DELETE"}:

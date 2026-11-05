@@ -117,12 +117,13 @@ Resources:
     Condition: ScheduledAutoInputEnabled
     Properties:
       Name: home-kakeibo-auto-input-daily
-      Description: Run enabled BELC and ETC automatic imports every day.
+      Description: Run enabled ETC automatic imports every day.
       ScheduleExpression: cron(0 15 * * ? *)
       State: ENABLED
       Targets:
         - Arn: !GetAtt AutoInputScheduledFunction.Arn
           Id: HomeKakeiboAutoInputScheduledFunction
+          Input: '{"body":{"connectionTypes":["ETC"]}}'
 
   AutoInputScheduledPermission:
     Type: AWS::Lambda::Permission
@@ -1485,6 +1486,11 @@ Resources:
           Type: HttpApi
           Properties:
             Path: /meal/{proxy+}
+            Method: ANY
+        KitchenApi:
+          Type: HttpApi
+          Properties:
+            Path: /kitchen/{proxy+}
             Method: ANY
 
   ChildcareApiFunction:

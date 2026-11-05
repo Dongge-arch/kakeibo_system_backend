@@ -15,6 +15,10 @@ set "LAMBDA_CONFIG_TEMPLATE=%SCRIPT_DIR%application.lambda.yaml"
 
 if exist "%SCRIPT_DIR%deploy_aws.env.bat" call "%SCRIPT_DIR%deploy_aws.env.bat"
 
+if not defined FRONTEND_DIR (
+    for %%I in ("%ROOT_DIR%..\home_kakeibo_frontend_exe\frontend-react") do set "FRONTEND_DIR=%%~fI"
+)
+
 if not defined AWS_REGION set "AWS_REGION=ap-northeast-1"
 if not defined STACK_NAME set "STACK_NAME=home-kakeibo-api"
 if not defined LAYER_NAME set "LAYER_NAME=home-kakeibo-layer"
@@ -154,10 +158,8 @@ if not defined HOME_KAKEIBO_LAYER_ARN (
 )
 echo [INFO] Layer ARN: %HOME_KAKEIBO_LAYER_ARN%
 
-echo [6/9] Staging Lambda handler source only...
-call :copy_tree "%ROOT_DIR%lambda_api" "%FUNCTION_DIR%\lambda_api"
-if errorlevel 1 exit /b 1
-call :copy_tree "%ROOT_DIR%lambda_batch" "%FUNCTION_DIR%\lambda_batch"
+echo [6/9] Packaging isolated Lambda handlers...
+"%KAKEIBO_PYTHON%" "%ROOT_DIR%tools\package_lambda_handlers.py"
 if errorlevel 1 exit /b 1
 
 echo [7/9] Creating Lambda handler zip...
@@ -221,9 +223,15 @@ if "!DEPLOYED_API_URL!"=="None" (
 echo [FRONTEND] Building React with API URL: !DEPLOYED_API_URL!
 set "VITE_API_BASE_URL=!DEPLOYED_API_URL!"
 set "VITE_API_KEY=%KAKEIBO_API_KEY%"
+if not exist "%FRONTEND_DIR%\package.json" (
+    echo [ERROR] Frontend package was not found: %FRONTEND_DIR%
+    echo [INFO] Set FRONTEND_DIR in deploy\aws\deploy_aws.env.bat when the frontend repository is elsewhere.
+    endlocal
+    exit /b 1
+)
 if exist "%FRONTEND_BUILD_DRIVE%\" (
     echo [WARN] %FRONTEND_BUILD_DRIVE% already exists. Building from normal path.
-    pushd "%ROOT_DIR%frontend-react"
+    pushd "%FRONTEND_DIR%"
     call npm run build
     if errorlevel 1 (
         popd
@@ -232,8 +240,8 @@ if exist "%FRONTEND_BUILD_DRIVE%\" (
     )
     popd
 ) else (
-    subst %FRONTEND_BUILD_DRIVE% "%ROOT_DIR%"
-    pushd "%FRONTEND_BUILD_DRIVE%\frontend-react"
+    subst %FRONTEND_BUILD_DRIVE% "%FRONTEND_DIR%"
+    pushd "%FRONTEND_BUILD_DRIVE%\"
     call npm run build
     if errorlevel 1 (
         popd
@@ -246,7 +254,7 @@ if exist "%FRONTEND_BUILD_DRIVE%\" (
 )
 
 echo [FRONTEND] Uploading to S3: %FRONTEND_S3_URI%
-aws s3 sync "%ROOT_DIR%frontend-react\dist" "%FRONTEND_S3_URI%" --region "%AWS_REGION%" --delete
+aws s3 sync "%FRONTEND_DIR%\dist" "%FRONTEND_S3_URI%" --region "%AWS_REGION%" --delete
 if errorlevel 1 (
     endlocal
     exit /b 1

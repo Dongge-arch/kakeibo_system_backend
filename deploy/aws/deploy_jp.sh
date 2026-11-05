@@ -3,7 +3,11 @@ set -euo pipefail
 
 # Japan test environment only. Production in Singapore requires a separate explicit operation.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$ROOT_DIR/../kakeibo_system_frontend/frontend-react" && pwd)}"
+DEFAULT_FRONTEND_DIR="$ROOT_DIR/../home_kakeibo_frontend_exe/frontend-react"
+if [[ ! -d "$DEFAULT_FRONTEND_DIR" ]]; then
+  DEFAULT_FRONTEND_DIR="$ROOT_DIR/../kakeibo_system_frontend/frontend-react"
+fi
+FRONTEND_DIR="${FRONTEND_DIR:-$(cd "$DEFAULT_FRONTEND_DIR" && pwd)}"
 REGION="ap-northeast-1"
 STACK_NAME="${STACK_NAME:-home-kakeibo-api-jp}"
 LAYER_NAME="${LAYER_NAME:-home-kakeibo-layer-jp}"

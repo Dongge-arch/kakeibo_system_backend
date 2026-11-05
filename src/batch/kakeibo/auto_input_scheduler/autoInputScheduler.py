@@ -18,8 +18,8 @@ AUTO_INPUT_BATCHES = {
     "MUJI": "src.batch.kakeibo.auto_input_targets.auto_input_muji.autoInput_Muji:AutoInput_Muji",
 }
 
-AWS_AUTO_INPUT_CONNECTIONS = ("BELC", "ETC")
-SERVER_AUTO_INPUT_CONNECTIONS = ("NITORI", "CAINZ", "MUJI")
+AWS_AUTO_INPUT_CONNECTIONS = ("ETC",)
+SERVER_AUTO_INPUT_CONNECTIONS = ("BELC", "AMAZON", "NITORI", "CAINZ", "MUJI")
 
 
 class AutoInputScheduler(BaseAutoInput):

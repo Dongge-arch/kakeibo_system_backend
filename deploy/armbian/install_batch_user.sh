@@ -43,7 +43,7 @@ fi
 exec 9>"${APP_DIR}/.auto-input.lock"
 flock -n 9 || exit 0
 xvfb-run -a .venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner \
-  --connection-types NITORI,CAINZ,MUJI \
+  --connection-types BELC,AMAZON,NITORI,CAINZ,MUJI \
   --schedule-name daily-midnight >> "\${RUNNER_LOG}" 2>&1
 EOF
 chmod +x "${RUN_SCRIPT}"

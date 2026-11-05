@@ -1,9 +1,10 @@
 """献立・育児 API の権限と計算を検証する。"""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import importlib
 from pathlib import Path
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -144,6 +145,53 @@ def test_baby_event_from_postgres_timestamp_is_japan_time():
     assert event["happenedAt"] == "2026-09-20T01:00:00+09:00"
 
 
+def test_baby_month_calendar_groups_bath_and_daily_events():
+    rows = [
+        {
+            "EVENT_ID": "bath", "BABY_ID": "b", "EVENT_TYPE": "bath",
+            "HAPPENED_AT": datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc),
+            "DATA_JSON": '{"durationMin":10}', "CREATED_BY": "u",
+        },
+        {
+            "EVENT_ID": "stool", "BABY_ID": "b", "EVENT_TYPE": "diaper",
+            "HAPPENED_AT": datetime(2026, 9, 20, 11, 0, tzinfo=timezone.utc),
+            "DATA_JSON": '{"kind":"stool"}', "CREATED_BY": "u",
+        },
+    ]
+    api = instance_without_connection(BabyEventReference, rows)
+    result = api.list_month_events({"BABY_ID": "b", "FAMILY_ID": "f"}, "2026-09")
+    body = result["body"]
+    assert result["statusCode"] == 200
+    assert body["days"][0]["date"] == "2026-09-20"
+    assert body["days"][0]["eventTypes"] == ["bath", "diaper"]
+    assert body["days"][0]["summary"]["baths"] == 1
+    assert body["days"][0]["summary"]["stool"] == 1
+
+
+def test_bath_event_validation_accepts_practical_values():
+    assert BabyBase.validate_event_data("bath", {"durationMin": 12, "waterTempC": 39}) is None
+    assert BabyBase.validate_event_data("bath", {"waterTempC": 80}) == "お湯の温度を確認してください。"
+
+
+def test_baby_profile_validation_identifies_the_invalid_field():
+    api = instance_without_connection(BabyReference)
+    api.is_member = lambda user_id, family_id: True
+    today_jst = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    valid = {"familyId": "family-1", "name": "はる", "birthDate": today_jst.isoformat(), "notes": ""}
+
+    saved = api.save_baby("owner", valid)
+    assert saved["statusCode"] == 200
+    assert api.database.statements[-1][1]["NAME"] == "はる"
+
+    no_name = api.save_baby("owner", {**valid, "name": "  "})
+    assert no_name["statusCode"] == 400
+    assert no_name["body"]["validationField"] == "name"
+
+    future = api.save_baby("owner", {**valid, "birthDate": (today_jst + timedelta(days=30)).isoformat()})
+    assert future["statusCode"] == 200
+    assert api.database.statements[-1][1]["BIRTH_DATE"] == (today_jst + timedelta(days=30)).isoformat()
+
+
 def test_baby_events_require_family_membership():
     api = instance_without_connection(BabyEventReference)
     api.require_verified_user_id = lambda request: "outsider"
@@ -195,3 +243,16 @@ def test_module_routes_select_one_api(monkeypatch, path, method, body, expected)
     assert result == expected
     if "/events" in path:
         assert routed_body["babyId"] == "b"
+
+
+@pytest.mark.parametrize("domain,path", [
+    ("meal", "/kitchen/recipes"),
+    ("childcare", "/childcare/families"),
+])
+def test_module_routes_complete_cors_preflight(domain, path):
+    router = importlib.import_module(f"lambda_api.{domain}.lambda_handler")
+    result = router.lambda_handler(
+        {"rawPath": path, "requestContext": {"http": {"method": "OPTIONS"}}},
+        None,
+    )
+    assert result == {"statusCode": 204, "body": ""}

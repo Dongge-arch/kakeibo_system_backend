@@ -46,12 +46,25 @@ def test_scheduler_separates_aws_and_server_connections():
         autoInputScheduler.AutoInputScheduler
     )
 
-    assert scheduler.resolve_target_connections({}) == ("BELC", "ETC")
+    assert scheduler.resolve_target_connections({}) == ("ETC",)
     assert scheduler.resolve_target_connections({"source": "armbian-server"}) == (
+        "BELC",
+        "AMAZON",
         "NITORI",
         "CAINZ",
         "MUJI",
     )
+
+
+def test_scheduler_selects_only_valid_database_connections():
+    sql = Path(
+        "src/batch/kakeibo/auto_input_scheduler/sql/SELECT_KAKEIBO_AUTO_INPUT_INFO.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ENABLED = 1" in sql
+    assert "COALESCE(LOGIN_ID_1, '') <> ''" in sql
+    assert "COALESCE(LOGIN_PW_1, '') <> ''" in sql
+    assert "DEL_FLAG = 0" in sql
 
 
 def test_scheduler_accepts_server_batch_class_override(monkeypatch):

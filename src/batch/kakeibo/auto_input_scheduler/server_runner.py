@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument(
         "--connection-types",
         default=",".join(SERVER_AUTO_INPUT_CONNECTIONS),
-        help="実行対象の連携種別。例: NITORI,CAINZ,MUJI",
+        help="実行対象の連携種別。例: BELC,AMAZON,NITORI,CAINZ,MUJI",
     )
     parser.add_argument(
         "--schedule-name",

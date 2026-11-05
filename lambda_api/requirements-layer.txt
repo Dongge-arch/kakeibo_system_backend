@@ -1,6 +1,7 @@
 PyYAML
 tzdata
 openpyxl
+reportlab
 psycopg[binary]
 requests
 beautifulsoup4

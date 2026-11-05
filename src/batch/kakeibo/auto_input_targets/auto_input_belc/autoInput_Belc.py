@@ -20,10 +20,11 @@ from src.common.exception import Error
 from src.api.kakeibo.receipt.new_receipt_registration.newReceiptRegistration import NewReceiptRegistration
 from src.api.kakeibo.receipt.ai_receipt.receiptAnalyzer import (
     GeminiReceiptAnalyzer,
+    build_category_prompt,
     build_category_pair_mapping_prompt,
     clean_category_label,
 )
-from src.api.kakeibo.receipt.taxPrice import normalize_tax_rate
+from src.api.kakeibo.receipt.taxPrice import normalize_tax_rate, round_price, to_number
 
 
 BELC_INVOICE_NUMBER = "T8030001085963"
@@ -830,7 +831,7 @@ class AutoInput_Belc(BaseAutoInput):
 
     def map_receipt_categories(self, receipt_info: dict, categories: dict, analyzer: GeminiReceiptAnalyzer) -> dict:
         """
-        Belc側カテゴリを家計簿カテゴリへ変換し、商品明細へ反映する。
+        Belcの各商品を商品名単位で家計簿カテゴリへ変換する。
 
         Args:
             receipt_info (dict): receipt_infoの値。
@@ -843,17 +844,95 @@ class AutoInput_Belc(BaseAutoInput):
         if not (categories.get("category2") if isinstance(categories, dict) else None):
             raise RuntimeError("receipt category master is empty; skipped AI category mapping.")
 
-        # 先にローカルでカテゴリ名同士を照合し、AIへ渡すカテゴリ数を減らす。
-        category_map = self.build_local_belc_category_map(receipt_info, categories)
-        unresolved_categories = self.find_unresolved_belc_categories(receipt_info, category_map)
-        if unresolved_categories:
-            category_map.update(self.map_unresolved_belc_categories_with_ai(
-                belc_categories=unresolved_categories,
-                categories=categories,
-                analyzer=analyzer,
-            ))
+        # 2026-09-18 Codex: 部門単位の共通分類で調味料などが菓子扱いになるため、商品ごとにAI分類する。
+        details = receipt_info.get("receiptDetails") or []
+        input_items = [
+            {
+                "detailIndex": index,
+                "itemName": detail.get("itemName") or "",
+                "belcCategoryCode": detail.get("belcCategoryCode") or "",
+                "belcCategoryName": detail.get("belcCategoryName") or "",
+                "taxRate": detail.get("taxRate"),
+            }
+            for index, detail in enumerate(details)
+        ]
+        parsed = analyzer.analyze_json_with_prompt(
+            text=json.dumps({"items": input_items}, ensure_ascii=False),
+            prompt=self.build_belc_item_category_mapping_prompt(categories),
+            label="Belc商品一覧",
+        )
+        status_code = int(parsed.get("statusCode", 500)) if isinstance(parsed, dict) else 500
+        if status_code >= 400:
+            raise RuntimeError(f"AI item category mapping failed: {parsed}")
 
-        return self.apply_belc_category_map(receipt_info, category_map, categories)
+        mapped_body = parsed.get("body") if isinstance(parsed, dict) else {}
+        mappings = mapped_body.get("mappings") if isinstance(mapped_body, dict) else None
+        return self.apply_belc_item_category_mappings(receipt_info, mappings, categories)
+
+    def build_belc_item_category_mapping_prompt(self, categories: dict) -> str:
+        """Belc商品を現在の家計簿カテゴリへ分類するプロンプトを作る。"""
+        return f"""Belcで購入した各商品を、家計簿カテゴリへ分類してください。
+説明文、Markdown、コードブロックは禁止です。JSONだけを返してください。
+
+【分類一覧】
+{build_category_prompt(categories)}
+
+【分類ルール】
+- detailIndexは入力値を変更せず、全商品を1回ずつ返してください。
+- category1/category2は必ず分類一覧に実在する組み合わせから1つ選んでください。
+- Belc側の部門は参考情報とし、最終判定は個別の商品名を優先してください。
+- 調味料、飲料、麺類、菓子、乳製品、日用品を同じ部門という理由で同一分類にしないでください。
+- taxRateと金額は分類対象外です。
+
+【出力形式】
+{{
+  "mappings": [
+    {{
+      "detailIndex": 0,
+      "category1": "",
+      "category2": ""
+    }}
+  ]
+}}
+"""
+
+    def apply_belc_item_category_mappings(self, receipt_info: dict, mappings, categories: dict) -> dict:
+        """AIの商品別分類を検証し、元の金額と税率を保持して反映する。"""
+        details = receipt_info.get("receiptDetails") or []
+        if not isinstance(mappings, list):
+            raise RuntimeError("AI item category mapping returned invalid mappings.")
+
+        valid_pairs = self.category_pair_map(categories)
+        mapped_by_index = {}
+        for mapping in mappings:
+            if not isinstance(mapping, dict):
+                continue
+            try:
+                detail_index = int(mapping.get("detailIndex"))
+            except (TypeError, ValueError):
+                raise RuntimeError(f"AI item category mapping returned invalid detailIndex: {mapping}")
+            category1 = clean_category_label(mapping.get("category1"))
+            category2 = clean_category_label(mapping.get("category2"))
+            if detail_index < 0 or detail_index >= len(details) or detail_index in mapped_by_index:
+                raise RuntimeError(f"AI item category mapping returned duplicate or unknown index: {mapping}")
+            if (category1, category2) not in valid_pairs:
+                raise RuntimeError(f"AI item category mapping returned unknown category: {mapping}")
+            mapped_by_index[detail_index] = (category1, category2)
+
+        if len(mapped_by_index) != len(details):
+            raise RuntimeError(
+                f"AI item category mapping count mismatch: expected={len(details)}, actual={len(mapped_by_index)}"
+            )
+
+        result = dict(receipt_info)
+        mapped_details = []
+        for index, detail in enumerate(details):
+            next_detail = dict(detail)
+            next_detail["category1"], next_detail["category2"] = mapped_by_index[index]
+            mapped_details.append(next_detail)
+        result["receiptDetails"] = mapped_details
+        result["receiptDetailCount"] = len(mapped_details)
+        return result
 
     def build_local_belc_category_map(self, receipt_info: dict, categories: dict) -> dict:
         """
@@ -1354,17 +1433,41 @@ class AutoInput_Belc(BaseAutoInput):
         """
         receipt_details = self.extract_belc_itemlist_details(soup)
         if receipt_details:
-            return receipt_details
+            return self.apply_belc_tax_prices(receipt_details)
 
         receipt_details = self.extract_receipt_details_by_known_selectors(soup)
         if receipt_details:
-            return receipt_details
+            return self.apply_belc_tax_prices(receipt_details)
 
         receipt_details = self.extract_receipt_details_from_tables(soup)
         if receipt_details:
-            return receipt_details
+            return self.apply_belc_tax_prices(receipt_details)
 
-        return self.extract_receipt_details_from_text(soup)
+        return self.apply_belc_tax_prices(self.extract_receipt_details_from_text(soup))
+
+    def apply_belc_tax_prices(self, receipt_details: list[dict]) -> list[dict]:
+        """Belcから取得した税抜金額から、税抜・税込金額を明示的に作る。"""
+        result = []
+        for detail in receipt_details:
+            next_detail = dict(detail)
+            tax_rate = normalize_tax_rate(next_detail.get("taxRate"))
+            tax_multiplier = 1 + tax_rate
+            tax_excluded_unit = round_price(to_number(next_detail.get("unitPrice")))
+            tax_excluded_total = round_price(to_number(next_detail.get("totalPrice")))
+
+            # 2026-09-18 Codex: Belc公式ページの商品金額は税抜のため、税込欄へそのまま保存しない。
+            tax_included_unit = round_price(tax_excluded_unit * tax_multiplier)
+            tax_included_total = round_price(tax_excluded_total * tax_multiplier)
+            next_detail.update({
+                "unitPrice": tax_excluded_unit,
+                "totalPrice": tax_included_total,
+                "taxExcludedUnitPrice": tax_excluded_unit,
+                "taxExcludedTotalPrice": tax_excluded_total,
+                "taxIncludedUnitPrice": tax_included_unit,
+                "taxIncludedTotalPrice": tax_included_total,
+            })
+            result.append(next_detail)
+        return result
 
     def extract_belc_itemlist_details(self, soup: BeautifulSoup) -> list[dict]:
         """

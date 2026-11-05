@@ -33,10 +33,29 @@ CREATE TABLE IF NOT EXISTS childcare.baby_event (
     event_id TEXT PRIMARY KEY,
     baby_id TEXT NOT NULL REFERENCES childcare.baby_profile(baby_id) ON DELETE CASCADE,
     family_id TEXT NOT NULL REFERENCES childcare.family_space(family_id) ON DELETE CASCADE,
-    event_type TEXT NOT NULL CHECK (event_type IN ('feed', 'diaper', 'temperature', 'sleep', 'growth', 'note')),
+    event_type TEXT NOT NULL CHECK (event_type IN ('feed', 'diaper', 'temperature', 'sleep', 'bath', 'growth', 'note')),
     happened_at TIMESTAMPTZ NOT NULL,
     data_json TEXT NOT NULL,
     created_by TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_childcare_event_day ON childcare.baby_event(baby_id, happened_at DESC);
+-- 2026-09-30 Codex: 既存環境では制約に「お風呂」がない場合だけ更新し、同時起動時のDDL競合を避ける。
+DO $$
+DECLARE
+    event_type_constraint TEXT;
+BEGIN
+    SELECT pg_get_constraintdef(oid)
+      INTO event_type_constraint
+      FROM pg_constraint
+     WHERE conrelid = 'childcare.baby_event'::regclass
+       AND conname = 'baby_event_event_type_check';
+
+    IF event_type_constraint IS NULL OR POSITION('bath' IN event_type_constraint) = 0 THEN
+        ALTER TABLE childcare.baby_event
+            DROP CONSTRAINT IF EXISTS baby_event_event_type_check;
+        ALTER TABLE childcare.baby_event
+            ADD CONSTRAINT baby_event_event_type_check
+            CHECK (event_type IN ('feed', 'diaper', 'temperature', 'sleep', 'bath', 'growth', 'note'));
+    END IF;
+END $$;

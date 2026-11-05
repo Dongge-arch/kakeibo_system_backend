@@ -638,7 +638,6 @@ class GeminiReceiptAnalyzer:
         payload = {"contents": [{"parts": parts}]}
 
         response = self.post_with_retry(url, payload)
-        response.raise_for_status()
         data = response.json()
 
         usage = self.normalize_usage(data.get("usageMetadata") or data.get("usage_metadata"))
@@ -673,23 +672,47 @@ class GeminiReceiptAnalyzer:
             Any: 処理結果。
         """
         last_error = None
+        retryable_status_codes = {408, 429, 500, 502, 503, 504}
         for attempt in range(1, self.api_retry_count + 1):
             try:
                 response = requests.post(url, json=payload, timeout=self.timeout)
-                response.raise_for_status()
-                return response
+                if response.ok:
+                    return response
+                error = RuntimeError(self.gemini_http_error_message(response))
+                if response.status_code not in retryable_status_codes:
+                    raise error
+                last_error = error
             except requests.RequestException as exc:
                 last_error = exc
-                if attempt >= self.api_retry_count:
-                    raise
-                log.warning(
-                    "Gemini API call failed (%s/%s); retrying in %s second.",
-                    attempt,
-                    self.api_retry_count,
-                    self.api_retry_delay_seconds,
-                )
-                time.sleep(self.api_retry_delay_seconds)
+            if attempt >= self.api_retry_count:
+                raise last_error
+            log.warning(
+                "Gemini API call failed (%s/%s); retrying in %s second.",
+                attempt,
+                self.api_retry_count,
+                self.api_retry_delay_seconds,
+            )
+            time.sleep(self.api_retry_delay_seconds)
         raise last_error
+
+    @staticmethod
+    def gemini_http_error_message(response) -> str:
+        """
+        GeminiのHTTPエラーから秘密情報を含まないメッセージを作る。
+
+        Args:
+            response (Any): requestsのレスポンス。
+
+        Returns:
+            str: HTTPステータスとGeminiのエラー本文。
+        """
+        message = "Gemini APIがリクエストを処理できませんでした。"
+        try:
+            error = (response.json() or {}).get("error") or {}
+            message = str(error.get("message") or message).strip()
+        except (TypeError, ValueError):
+            pass
+        return f"Gemini API error ({response.status_code}): {message}"
 
     def should_retry_api_error(self, exc: Exception) -> bool:
         """

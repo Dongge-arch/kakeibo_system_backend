@@ -5,13 +5,13 @@ Amazon / Belc など Lambda からアクセスしにくい連携を、Armbian �
 ## 仕組み
 
 - 実行入口: `python -m src.batch.kakeibo.auto_input_scheduler.server_runner`
-- 対象: `NITORI,CAINZ,MUJI`
+- 対象: `BELC,AMAZON,NITORI,CAINZ,MUJI`
 - 認証情報: クラウドDBの `kakeibo.auto_input_info` から取得
 - 保存先: 既存 batch と同じクラウドDB
 - 定期実行: ユーザーの cron で毎日 `00:00`
 - ログ: サーバー内の `logs/home-kakeibo.log` と `logs/auto-input-runner.log`
 
-BELC / ETC は AWS Lambda 側で実行し、AWS IPやブラウザ制約のあるサービスだけを Armbian で実行します。業務コードはどちらも同じ `src/batch/kakeibo` を使用します。
+BELC / AMAZON / NITORI / CAINZ / MUJI は Armbian 側、ETC は AWS Lambda 側で実行します。Armbian 側は、クラウドDBの `kakeibo.auto_input_info` に、有効化済み・未削除・ログインID/パスワード設定済みのレコードがある連携先だけを実行します。
 
 ## 配置
 
@@ -33,7 +33,7 @@ Windows 側からは PowerShell 版を使用します。
 
 ```bash
 cd /home/armbian/home-kakeibo-batch
-xvfb-run -a .venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner --connection-types NITORI,CAINZ,MUJI
+xvfb-run -a .venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_runner --connection-types BELC,AMAZON,NITORI,CAINZ,MUJI
 ```
 
 ## 今後の拡張

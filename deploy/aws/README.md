@@ -51,3 +51,5 @@ set "FRONTEND_CLOUDFRONT_DISTRIBUTION_ID="
 ```
 
 Web 版として公開する場合だけ、S3 へアップロードされるのは `frontend-react/dist` の静的ファイルです。CloudFront はその S3 ファイルを配信します。Lambda handler、layer、DB データは S3/CloudFront の配信対象ではありません。
+
+フロントエンドとバックエンドを別のリポジトリへ保存する場合、スクリプトは既定で同階層の `home_kakeibo_frontend_exe/frontend-react` を使用します。配置先が異なる環境では `deploy_aws.env.bat` に `FRONTEND_DIR` を設定してください。
