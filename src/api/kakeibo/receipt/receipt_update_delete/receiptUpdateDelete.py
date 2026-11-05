@@ -12,6 +12,10 @@ from datetime import datetime
 from src.api.kakeibo.receipt.supplierLogoStorage import SupplierLogoStorage
 from src.api.kakeibo.receipt.taxPrice import enrich_detail_prices
 from src.api.kakeibo.receipt.receiptValidation import validate_receipt_for_save
+from src.common.category_catalog import (
+    category_for_new_detail,
+    classify_supplier_category,
+)
 
 
 class ReceiptUpdateDelete(BaseRestApi):
@@ -203,6 +207,7 @@ class ReceiptUpdateDelete(BaseRestApi):
             "UPD_PROG": "ReceiptUpdateDelete",
             "INV_REG_NUM": invoice_number,
             "SUP_NAME": receipt_info.get("supplierName"),
+            "SUP_CATEGORY": self.resolve_supplier_category(receipt_info),
             "TAX_FLAG": receipt_info.get("taxFlag"),
             "CRE_DT": now_dt.strftime("%Y%m%d"),
             "CRE_TM": now_dt.strftime("%H%M%S"),
@@ -220,6 +225,17 @@ class ReceiptUpdateDelete(BaseRestApi):
 
         insert_sql = self.database.read_sql("INSERT_INVOICE_REGISTRATION", location=__file__)
         self.database.insert(insert_sql, params=params)
+
+    def resolve_supplier_category(self, receipt_info: Dict[str, Any]) -> str:
+        """既存の利用者指定を優先して店舗分類を補完する。"""
+        current = str(receipt_info.get("supplierCategory") or "").strip()
+        if current and current != "その他":
+            return current
+        details = [
+            category_for_new_detail(detail)
+            for detail in (receipt_info.get("receiptDetails") or [])
+        ]
+        return classify_supplier_category(receipt_info.get("supplierName"), details)
 
     def update_receipt_details(self,receipt_id: str , body: Dict[str, Any], user_id: str) -> None:
         """
@@ -249,6 +265,8 @@ class ReceiptUpdateDelete(BaseRestApi):
         self.ensure_receipt_detail_tax_columns()
 
         for detail in receipt_details:
+            # 2026-11-06 Codex: 更新時も未分類だけを共通判定器で補完する。
+            detail = category_for_new_detail(detail)
             prices = enrich_detail_prices(detail, tax_flag)
             receipt_detail_data = {
                 "UPD_PROG":"ReceiptUpdateDelete",

@@ -12,6 +12,7 @@ import time
 
 import requests
 from src.common.config import APP_CONFIG
+from src.common.category_catalog import suggest_item_category
 from src.api.kakeibo.receipt.taxPrice import enrich_detail_prices, normalize_tax_rate
 
 
@@ -295,23 +296,12 @@ def category_tax_rate_map(categories: dict) -> dict[tuple[str, str], float]:
 def fallback_category(item_name: str, pairs: set[tuple[str, str]]) -> tuple[str, str]:
     """
     AI が分類できなかった場合の最低限の補正。
-    ここではレシートで頻出する食品・酒・レジ袋だけを強く補正する。
+    登録・移行と共通の高確度ルールだけを使用する。
     """
-    name = str(item_name or "")
-    rules = [
-        (("レジ袋", "袋"), ("日用品", "ゴミ袋・掃除用品")),
-        (("酒", "ビール", "ハイボール", "カクテル", "ワイン", "焼酎", "チューハイ"), ("食費", "酒類・アルコール")),
-        (("寿司", "刺身", "鮭", "魚", "まぐろ", "サーモン"), ("食費", "魚介・海産物")),
-        (("豚", "牛", "鶏", "肉", "ハム", "ソーセージ"), ("食費", "肉・ハム・ソーセージ")),
-        (("弁当", "惣菜", "テイクアウト"), ("食費", "惣菜・弁当・テイクアウト")),
-        (("豆腐", "納豆", "ゆば", "大豆"), ("食費", "豆腐・納豆・豆類")),
-        (("パン", "米", "麺"), ("食費", "米・パン・麺")),
-        (("茶", "水", "コーヒー", "飲料"), ("食費", "飲料・水・お茶・コーヒー")),
-    ]
-
-    for keywords, pair in rules:
-        if any(keyword in name for keyword in keywords) and pair in pairs:
-            return pair
+    # 2026-11-06 Codex: 登録・移行と同じ共通辞書を使用し、AI後処理だけ旧分類へ戻る不整合を防ぐ。
+    suggestion = suggest_item_category(item_name)
+    if suggestion and suggestion[:2] in pairs:
+        return suggestion[:2]
 
     # 2026-11-05 Codex: 推測できない商品は任意の分類へ寄せず、利用者が後から確認できる未分類へ集約する。
     if ("その他", "未分類") in pairs:
@@ -398,7 +388,7 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 - 分類は商品名だけでなく、店舗名・業態・レシート全体の利用場面を優先してください。
 - 飲食店、レストラン、ラーメン店、カフェ、ファストフード、居酒屋では、食品名でも「食費 > 外食」を優先してください。
 - スーパー、ドラッグストア、コンビニで購入した食品は、商品名に応じた食品分類を選んでください。
-- 同じラーメンでも、飲食店で食べた場合は外食、スーパーで購入した袋麺・カップ麺は米・パン・麺などに分類してください。
+- 同じラーメンでも、飲食店で食べた場合は外食、スーパーで購入した袋麺・カップ麺は麺類などに分類してください。
 
 【分類一覧】
 {category_text}

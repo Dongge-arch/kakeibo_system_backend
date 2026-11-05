@@ -1,0 +1,337 @@
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Home Kakeibo System Contributors
+
+"""支出明細と店舗で共用する標準分類、ならびに保守的な自動判定。"""
+
+from __future__ import annotations
+
+from collections import Counter
+import re
+import unicodedata
+from typing import Iterable, Mapping, Sequence
+
+
+# 2026-11-06 Codex: 実登録商品を基に、食品・育児・自動車・趣味を分離した標準分類へ拡張する。
+DEFAULT_EXPENSE_CATEGORIES: dict[str, tuple[tuple[str, float], ...]] = {
+    "食費": (
+        ("米・ごはん", 0.08), ("パン・ベーカリー", 0.08), ("麺類", 0.08),
+        ("肉類", 0.08), ("魚介類", 0.08), ("野菜", 0.08), ("果物", 0.08),
+        ("卵", 0.08), ("乳製品", 0.08), ("豆・豆腐・納豆", 0.08),
+        ("惣菜・弁当", 0.08), ("冷凍食品", 0.08), ("菓子", 0.08),
+        ("アイス・デザート", 0.08), ("調味料・油", 0.08), ("飲料", 0.08),
+        ("その他食品", 0.08), ("酒類", 0.10), ("外食", 0.10), ("カフェ", 0.10),
+    ),
+    "日用品": (
+        ("洗剤・掃除用品", 0.10), ("紙用品", 0.10), ("キッチン用品", 0.10),
+        ("バス・トイレ用品", 0.10), ("衛生用品", 0.10), ("文具・事務用品", 0.10),
+        ("収納用品", 0.10), ("電池・消耗品", 0.10), ("生活雑貨", 0.10),
+        ("花・園芸", 0.10),
+    ),
+    "交通": (
+        ("電車・バス", 0.10), ("タクシー", 0.10), ("自転車", 0.10),
+        ("飛行機", 0.10), ("船舶", 0.10),
+    ),
+    "自動車": (
+        ("ガソリン", 0.10), ("駐車場", 0.10), ("高速道路", 0.10),
+        ("車検・整備", 0.10), ("カー用品・部品", 0.10), ("車両購入", 0.10),
+        ("レンタカー", 0.10),
+    ),
+    "住居": (
+        ("家賃", 0.10), ("管理費", 0.10), ("家具", 0.10), ("家電", 0.10),
+        ("修繕・工具", 0.10), ("インテリア", 0.10), ("引越し", 0.10),
+        ("廃棄物処理", 0.10),
+    ),
+    "水道光熱": (("電気", 0.10), ("ガス", 0.10), ("水道", 0.10), ("灯油", 0.10)),
+    "通信": (
+        ("携帯料金", 0.10), ("インターネット", 0.10), ("サブスク", 0.10),
+        ("郵便・配送", 0.10), ("端末・周辺機器", 0.10),
+    ),
+    "医療": (
+        ("病院", 0.10), ("薬・処方箋", 0.10), ("歯科", 0.10),
+        ("検査・予防", 0.10), ("医療・健康用品", 0.10),
+    ),
+    "美容": (
+        ("美容院", 0.10), ("化粧品", 0.10), ("スキンケア", 0.10),
+        ("理容・ネイル", 0.10), ("美容機器", 0.10),
+    ),
+    "衣服": (
+        ("服", 0.10), ("靴", 0.10), ("バッグ・小物", 0.10),
+        ("下着・靴下", 0.10), ("クリーニング", 0.10),
+    ),
+    "育児・子ども": (
+        ("おむつ・おしりふき", 0.10), ("授乳・哺乳用品", 0.10),
+        ("ベビー食品", 0.08), ("ベビー衣類", 0.10), ("育児用品", 0.10),
+        ("おもちゃ", 0.10), ("保育・託児", 0.10), ("子ども医療・ケア", 0.10),
+    ),
+    "娯楽": (
+        ("映画・配信", 0.10), ("書籍・雑誌", 0.10), ("ゲーム", 0.10),
+        ("旅行・宿泊", 0.10), ("イベント", 0.10), ("スポーツ", 0.10),
+        ("レジャー施設", 0.10),
+    ),
+    "趣味": (
+        ("電子工作", 0.10), ("カメラ・写真", 0.10), ("模型・工作", 0.10),
+        ("音楽", 0.10), ("コレクション", 0.10), ("趣味用品", 0.10),
+    ),
+    "交際": (
+        ("贈答", 0.10), ("会食", 0.10), ("冠婚葬祭", 0.10),
+        ("家族・友人", 0.10), ("花・ギフト", 0.10),
+    ),
+    "教育": (
+        ("学習", 0.10), ("教材・書籍", 0.10), ("資格・試験", 0.10),
+        ("学校・授業料", 0.10),
+    ),
+    "ペット": (("フード", 0.10), ("用品", 0.10), ("病院・ケア", 0.10)),
+    "税金・保険": (
+        ("保険料", 0.10), ("税金", 0.10), ("年金", 0.10),
+        ("行政手数料", 0.10),
+    ),
+    "仕事": (("業務用品", 0.10), ("交通・出張", 0.10), ("会議・交際", 0.10)),
+    "その他": (
+        ("手数料", 0.10), ("値引・調整", 0.10), ("寄付", 0.10),
+        ("雑費・不明", 0.10), ("未分類", 0.10),
+    ),
+}
+
+PLACE_CATEGORIES: tuple[str, ...] = (
+    "コンビニ", "スーパー・食品", "ドラッグストア", "飲食店", "カフェ・菓子",
+    "ネット通販", "百貨店・商業施設", "ホームセンター", "100円ショップ",
+    "家具・インテリア", "家電・PC", "衣料・靴", "美容・理容", "医療機関",
+    "ガソリンスタンド", "駐車場", "鉄道・バス", "高速道路", "高速道路施設", "自動車関連",
+    "公共料金", "行政・税金", "宿泊・旅行", "教育・書籍", "ペット",
+    "ベビー・子ども", "趣味・娯楽", "生活サービス", "総合小売・サービス", "その他",
+    "登録不要",
+)
+
+
+def normalize_match_text(value: object) -> str:
+    """表記ゆれを抑えた判定用文字列へ変換する。"""
+    text = unicodedata.normalize("NFKC", str(value or "")).lower()
+    return re.sub(r"[\s\-‐‑‒–—―・･_／/]+", "", text)
+
+
+def category_tax_rate(category1: str, category2: str, default: float = 0.10) -> float:
+    """標準分類に登録された税率を返す。"""
+    for name, rate in DEFAULT_EXPENSE_CATEGORIES.get(category1, ()):
+        if name == category2:
+            return rate
+    return default
+
+
+def default_category_rows() -> list[dict[str, object]]:
+    """DBや画面へ登録できる小分類行へ展開する。"""
+    return [
+        {"category1Name": category1, "category2Name": category2, "taxRate": tax_rate}
+        for category1, children in DEFAULT_EXPENSE_CATEGORIES.items()
+        for category2, tax_rate in children
+    ]
+
+
+_ITEM_RULES: tuple[tuple[str, str, str], ...] = (
+    ("育児・子ども", "おむつ・おしりふき", r"おむつ|オムツ|パンパース|メリーズ|ムーニー|おしりふき"),
+    ("育児・子ども", "授乳・哺乳用品", r"哺乳|ほ乳|搾乳|さく乳|おしゃぶり|母乳パッド|授乳"),
+    ("育児・子ども", "ベビー食品", r"離乳食|ベビーフード|赤ちゃん.*(飲料|おやつ|食品)"),
+    ("育児・子ども", "ベビー衣類", r"ベビー.*(服|肌着|ロンパース)|新生児.*(服|肌着)"),
+    ("育児・子ども", "育児用品", r"ベビー|赤ちゃん|ガラガラ|チャイルドシート|抱っこひも|抱っこ紐|ベビーカー"),
+    ("自動車", "車両購入", r"車購入|車両購入|自動車購入"),
+    ("自動車", "ガソリン", r"レギュラーガソリン|ハイオク|軽油|給油"),
+    ("自動車", "高速道路", r"etc高速|高速道路料金|有料道路"),
+    ("自動車", "駐車場", r"駐車料金|パーキング|駐車場"),
+    ("自動車", "車検・整備", r"車検|オイル交換|タイヤ交換|自動車整備"),
+    ("自動車", "カー用品・部品", r"カーナビ|ドライブレコーダ|ドラレコ|カー用品|ワイパー|車用|自動車.*部品"),
+    ("水道光熱", "ガス", r"ガス料金|都市ガス|プロパン"),
+    ("水道光熱", "水道", r"水道料金|水道使用"),
+    ("水道光熱", "電気", r"電気料金|電力料金"),
+    ("税金・保険", "税金", r"住民税|区民税|市民税|県民税|固定資産税|自動車税|納税"),
+    ("税金・保険", "行政手数料", r"印鑑証明|戸籍|住民票|マイナンバー|電子証明|公証|印紙|証明書.*手数料|保管場所証明"),
+    ("娯楽", "旅行・宿泊", r"ホテル名|宿泊|旅館|room.*泊|orixhotels"),
+    ("衣服", "クリーニング", r"普通洗濯|靴洗濯|靴乾燥|クリーニング"),
+    ("交際", "花・ギフト", r"ブーケ|花束|フラワーギフト"),
+    ("趣味", "カメラ・写真", r"instax|チェキ|カメラ|写真プリント|フォト"),
+    ("趣味", "模型・工作", r"ロボタイム|robotime|プラモデル|模型キット"),
+    ("通信", "端末・周辺機器", r"iphone|スマホ|usbケーブル|充電ケーブル|microsd|メモリーカード"),
+    ("通信", "端末・周辺機器", r"^btレーザー$|bluetooth.*レーザー"),
+    ("医療", "医療・健康用品", r"鼻呼吸|いびき|口呼吸|体温計|血圧計|サポーター"),
+    ("医療", "薬・処方箋", r"ナザール|スプレーポンプ|錠|カプセル|処方|医薬品"),
+    ("日用品", "紙用品", r"トイレット.*ロール|ティッシュ|キッチンペーパー"),
+    ("日用品", "洗剤・掃除用品", r"be\.l\.tローラー|粘着ローラー|コロコロクリーナー"),
+    ("日用品", "キッチン用品", r"サランラップ|フリーザーパック|パウンドケーキトレイ|食器|包丁"),
+    ("住居", "廃棄物処理", r"廃棄物処理|粗大ごみ|ごみ処理"),
+    ("その他", "値引・調整", r"^値引額$|まとめ値引|^[0-9]+p値引$|値引き調整"),
+    ("その他", "雑費・不明", r"^雑費$"),
+    ("食費", "その他食品", r"スーパー.*レシート紛失"),
+    ("食費", "飲料", r"ノンアルコール|ドライゼロ|スタイルバランス"),
+    ("食費", "惣菜・弁当", r"サラダ|サンド|弁当|おにぎり(?!のり)|握り寿司|寿司|プレート|唐揚|からあげ|鶏唐|メンチカツ|フライ|惣菜"),
+    ("食費", "パン・ベーカリー", r"パン|ドーナツ|クロワッサン|ミニクロ|チーズフォ|ブッセ|ベーカリー"),
+    ("食費", "麺類", r"スパ王|スパゲッティ|パスタ|ラーメン|うどん|そば|焼そば|焼きそば|麺"),
+    ("食費", "アイス・デザート", r"^4カット$|parm|アイス|ジェラート|プリン|ゼリー|ケーキ|デザート"),
+    ("食費", "菓子", r"たべっ子|じゃがりこ|玄米ブラン|チョコ|クッキー|スナック|せんべい|キャンディ|菓子|かりんとう"),
+    ("食費", "酒類", r"ビール|発泡酒|チューハイ|ワイン|日本酒|焼酎|ウイスキー|ハイボール|梅酒"),
+    ("食費", "飲料", r"ノンアルコール|ドライゼロ|ペプシ|コーラ|天然水|ジュース|飲料|お茶|コーヒー"),
+    ("食費", "魚介類", r"鮭|サーモン|まぐろ|鮪|えび|海老|ほたて|帆立|かにかま|蟹|魚|海産"),
+    ("食費", "肉類", r"牛肉|豚肉|鶏肉|チキン|ひき肉|ハム|ソーセージ|フランク"),
+    ("食費", "豆・豆腐・納豆", r"納豆|豆腐|油揚げ|厚揚げ"),
+    ("食費", "卵", r"たまご|卵"),
+    ("食費", "乳製品", r"牛乳|ヨーグルト|チーズ(?!味)|バター(?!味)|乳飲料"),
+    ("食費", "果物", r"バナナ|りんご|リンゴ|みかん|いちご|苺|ベリー|ぶどう|葡萄|果物|フルーツ"),
+    ("食費", "野菜", r"たけのこ|枝豆|キャベツ|レタス|トマト|きゅうり|大根|玉ねぎ|野菜"),
+    ("食費", "米・ごはん", r"おにぎり(?!のり)|握り寿司|寿司|御飯|ご飯|弁当|米$"),
+    ("食費", "冷凍食品", r"冷凍|フローズン"),
+)
+
+
+def suggest_item_category(item_name: object) -> tuple[str, str, float] | None:
+    """商品名から十分に確度の高い分類だけを提案する。"""
+    text = unicodedata.normalize("NFKC", str(item_name or ""))
+    if not text.strip():
+        return None
+    for category1, category2, pattern in _ITEM_RULES:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return category1, category2, category_tax_rate(category1, category2)
+    return None
+
+
+def refine_item_category(
+    item_name: object,
+    category1: object,
+    category2: object,
+    tax_rate: object = None,
+) -> tuple[str, str, float]:
+    """旧分類を保ちながら、商品名または確定済み交通分類を新分類へ寄せる。"""
+    current1 = str(category1 or "").strip() or "その他"
+    current2 = str(category2 or "").strip() or "未分類"
+    if current1 == "交通" and current2 in {"ガソリン", "駐車場", "高速料金", "高速道路"}:
+        target2 = "高速道路" if current2 in {"高速料金", "高速道路"} else current2
+        return "自動車", target2, category_tax_rate("自動車", target2)
+    suggestion = suggest_item_category(item_name)
+    unresolved = current1 in {"", "その他"} or current2 in {"", "未分類", "その他"}
+    if current1 == "食費" and suggestion:
+        target2 = suggestion[1]
+        if current2 == "菓子・デザート" and target2 not in {"菓子", "アイス・デザート"}:
+            return "食費", "菓子", category_tax_rate("食費", "菓子")
+        if current2 == "調味料" and target2 not in {"酒類"}:
+            return "食費", "調味料・油", category_tax_rate("食費", "調味料・油")
+        if current2 == "飲料" and target2 != "酒類":
+            return "食費", "飲料", category_tax_rate("食費", "飲料")
+        if current2 == "惣菜・冷凍食品" and target2 not in {
+            "惣菜・弁当", "冷凍食品", "麺類", "パン・ベーカリー", "米・ごはん",
+        }:
+            return "食費", "惣菜・弁当", category_tax_rate("食費", "惣菜・弁当")
+    if suggestion and (
+        unresolved
+        or suggestion[0] in {"育児・子ども", "自動車"}
+        or (current1 == "食費" and suggestion[0] == "食費" and current2 not in {"外食", "カフェ"})
+    ):
+        return suggestion
+    try:
+        current_rate = float(tax_rate)
+    except (TypeError, ValueError):
+        current_rate = category_tax_rate(current1, current2)
+    return current1, current2, current_rate
+
+
+_PLACE_NAME_RULES: tuple[tuple[str, str], ...] = (
+    ("登録不要", r"^場所登録不要$|^登録不要$"),
+    ("コンビニ", r"セブン|7eleven|ファミリーマート|ファミマ|familymart|ローソン|lawson|ミニストップ|デイリーヤマザキ"),
+    ("スーパー・食品", r"ベルク|ロピア|まいばすけっと|サミット|食品館|queen.*mart|吉川水産|イオンリテール|西友|マルエツ|イトーヨーカドー|業務スーパー"),
+    ("ドラッグストア", r"ウェルシア|薬局|ドラッグ|サンドラ|スギ薬局|ダイコク|クリエイト|ココカラファイン|マツモトキヨシ|^create$"),
+    ("100円ショップ", r"ダイソー|seria|セリア|キャンドゥ|cando"),
+    ("ネット通販", r"amazon|アマゾン|楽天|yahoo.*ショッピング|ヨドバシ\.com"),
+    ("ホームセンター", r"コーナン|カインズ|ホームセンター|ケーヨーデイツー"),
+    ("家具・インテリア", r"ikea|ニトリ|家具|インテリア"),
+    ("家電・PC", r"ソフマップ|ビックカメラ|ヨドバシ|あきばお|秋月電子|千石電商|pcデポ|pcuseful|浜田電機|ヤマダ電機|ヤマダデンキ|ケーズデンキ"),
+    ("衣料・靴", r"puma|crocs|靴下屋|olive|lbc|lupis|アパレル|ファッション"),
+    ("美容・理容", r"美容|理容|hair|salon|ネイル|床屋"),
+    ("医療機関", r"病院|医院|クリニック|歯科|診療所"),
+    ("ガソリンスタンド", r"enejet|eneos|apollo|石油|ガソリンスタンド|コスモ石油|出光"),
+    ("駐車場", r"タイムズ|parking|パーキング|駐車場"),
+    ("高速道路", r"nexco|道路公社|高速道路"),
+    ("自動車関連", r"オートバックス|アップガレージ|アップ・ガレージ|自動車|タイヤ館"),
+    ("鉄道・バス", r"鉄道|電鉄|交通局|バス|suica|pasmo"),
+    ("公共料金", r"水道局|電力|ガス会社|東京ガス|tepco|クレックス"),
+    ("行政・税金", r"市役所|区役所|税務署|^秦野市$|^神奈川県$|自治体"),
+    ("宿泊・旅行", r"ホテル|旅館|リゾート|旅行"),
+    ("教育・書籍", r"book.?off|書店|学校|大学|学習塾"),
+    ("ペット", r"petemo|ペット|動物病院"),
+    ("ベビー・子ども", r"赤ちゃん本舗|アカチャンホンポ|西松屋|トイザらス|ベビー"),
+    ("カフェ・菓子", r"カフェ|cafe|珈琲|コメダ|donut|ドーナツ|gelato|ジェラート|lindt|baskin|キルフェボン|みちパン|パン工房|ベーカリー"),
+    ("飲食店", r"寿司|レストラン|bistro|grill|ケンタッキー|すかいらーく|パンチョ|中本|田所商店|食堂|ラーメン|焼肉|居酒屋"),
+    ("趣味・娯楽", r"映画館|シネマ|ゲーム|ホビー|ハードオフ|快活club|こびとづかん|セルスタ|maglab|江戸村|テーマパーク|遊園地"),
+    ("総合小売・サービス", r"hands|ハンズ|良品計画|無印良品|オリンピア"),
+    ("生活サービス", r"クリーニング|ランドリー"),
+    ("高速道路施設", r"expasa|サービスエリア|パーキングエリア"),
+    ("百貨店・商業施設", r"百貨店|モール|ららぽーと|ドンキ|ドン・キホーテ"),
+)
+
+_PLACE_CATEGORY_FALLBACK: dict[str, str] = {
+    "食費/外食": "飲食店", "食費/カフェ": "カフェ・菓子", "食費/菓子": "カフェ・菓子",
+    "食費/菓子・デザート": "カフェ・菓子", "自動車/ガソリン": "ガソリンスタンド",
+    "交通/ガソリン": "ガソリンスタンド", "自動車/駐車場": "駐車場", "交通/駐車場": "駐車場",
+    "自動車/高速道路": "高速道路", "交通/高速料金": "高速道路", "交通/高速道路": "高速道路",
+    "交通/電車・バス": "鉄道・バス", "住居/家具": "家具・インテリア", "住居/家電": "家電・PC",
+    "衣服/服": "衣料・靴", "衣服/靴": "衣料・靴", "美容/美容院": "美容・理容",
+    "医療/病院": "医療機関", "ペット/フード": "ペット", "ペット/用品": "ペット",
+    "育児・子ども/育児用品": "ベビー・子ども", "教育/教材・書籍": "教育・書籍",
+    "娯楽/旅行・宿泊": "宿泊・旅行", "水道光熱/水道": "公共料金", "水道光熱/ガス": "公共料金",
+    "水道光熱/電気": "公共料金", "税金・保険/税金": "行政・税金", "趣味/電子工作": "趣味・娯楽",
+}
+
+
+def classify_supplier_category(
+    supplier_name: object,
+    detail_categories: Iterable[Sequence[object] | Mapping[str, object]] = (),
+) -> str:
+    """店舗名を優先し、判別できない場合は登録商品の主分類から店舗分類を返す。"""
+    name = normalize_match_text(supplier_name)
+    for category, pattern in _PLACE_NAME_RULES:
+        if re.search(pattern, name, flags=re.IGNORECASE):
+            return category
+
+    pairs: Counter[str] = Counter()
+    for detail in detail_categories:
+        if isinstance(detail, Mapping):
+            category1 = detail.get("category1") or detail.get("CAT1") or detail.get("cat1")
+            category2 = detail.get("category2") or detail.get("CAT2") or detail.get("cat2")
+            weight = detail.get("count") or detail.get("items") or 1
+        else:
+            values = list(detail)
+            category1 = values[0] if values else ""
+            category2 = values[1] if len(values) > 1 else ""
+            weight = values[2] if len(values) > 2 else 1
+        try:
+            count = int(weight)
+        except (TypeError, ValueError):
+            count = 1
+        pairs[f"{str(category1 or '').strip()}/{str(category2 or '').strip()}"] += max(1, count)
+
+    for pair, _ in pairs.most_common():
+        if pair in _PLACE_CATEGORY_FALLBACK:
+            return _PLACE_CATEGORY_FALLBACK[pair]
+        category1 = pair.split("/", 1)[0]
+        if category1 == "食費":
+            return "スーパー・食品"
+        if category1 == "日用品":
+            return "総合小売・サービス"
+    return "総合小売・サービス"
+
+
+def category_for_new_detail(detail: Mapping[str, object]) -> dict[str, object]:
+    """未分類明細だけを補正し、利用者が確定した分類は保持する。"""
+    category1 = str(detail.get("category1") or "").strip()
+    category2 = str(detail.get("category2") or "").strip()
+    if category1 == "交通" and category2 in {"ガソリン", "駐車場", "高速料金", "高速道路"}:
+        # 2026-11-06 Codex: 公共交通と自動車維持費を分離し、今後の登録を新分類へ統一する。
+        target2 = "高速道路" if category2 in {"高速料金", "高速道路"} else category2
+        next_detail = dict(detail)
+        next_detail["category1"] = "自動車"
+        next_detail["category2"] = target2
+        next_detail["taxRate"] = category_tax_rate("自動車", target2)
+        return next_detail
+    if category1 not in {"", "その他"} and category2 not in {"", "未分類", "その他"}:
+        return dict(detail)
+    suggestion = suggest_item_category(detail.get("itemName"))
+    if not suggestion:
+        return dict(detail)
+    next_detail = dict(detail)
+    next_detail["category1"], next_detail["category2"], next_detail["taxRate"] = suggestion
+    return next_detail

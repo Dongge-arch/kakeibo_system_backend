@@ -16,6 +16,10 @@ from datetime import datetime
 from src.api.kakeibo.receipt.supplierLogoStorage import SupplierLogoStorage
 from src.api.kakeibo.receipt.taxPrice import enrich_detail_prices
 from src.api.kakeibo.receipt.receiptValidation import validate_receipt_for_save
+from src.common.category_catalog import (
+    category_for_new_detail,
+    classify_supplier_category,
+)
 
 from psycopg import IntegrityError
 
@@ -240,6 +244,8 @@ class NewReceiptRegistration(BaseRestApi):
             Any: 処理結果。
         """
         for detail in receipt_details:
+            # 2026-11-06 Codex: 未分類商品だけを実商品名から補完し、利用者が選んだ分類は変更しない。
+            detail = category_for_new_detail(detail)
             prices = enrich_detail_prices(detail, tax_flag)
             receipt_detail_data = {
                 "CRE_PROG":"NewReceiptRegistration", # 登録プログラム名
@@ -334,6 +340,7 @@ class NewReceiptRegistration(BaseRestApi):
             "UPD_PROG":"NewReceiptRegistration", # 更新プログラム名
             "INV_REG_NUM": invoice_number, # インボイス登録番号
             "SUP_NAME": body.get("supplierName"), # 取引先名
+            "SUP_CATEGORY": self.resolve_supplier_category(body), # 店舗分類
             "TAX_FLAG": body.get("taxFlag"), # 税区分
             "CRE_DT":datetime.now().strftime("%Y%m%d"), # 登録日
             "CRE_TM":datetime.now().strftime("%H%M%S"), # 登録時刻
@@ -354,6 +361,17 @@ class NewReceiptRegistration(BaseRestApi):
                 self.logger.warning("登録者番号はすでに登録されています。")
             else:
                 raise e
+
+    def resolve_supplier_category(self, body: Dict[str, Any]) -> str:
+        """画面指定を優先し、未指定店舗は名称と商品分類から判定する。"""
+        current = str(body.get("supplierCategory") or "").strip()
+        if current and current != "その他":
+            return current
+        details = [
+            category_for_new_detail(detail)
+            for detail in (body.get("receiptDetails") or [])
+        ]
+        return classify_supplier_category(body.get("supplierName"), details)
 
             
     def select_invoice_registration(self, inv_reg_num: str , user_id: str) -> Dict[str, Any]:

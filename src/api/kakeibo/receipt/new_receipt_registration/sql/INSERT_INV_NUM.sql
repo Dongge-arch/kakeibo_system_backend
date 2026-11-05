@@ -6,6 +6,7 @@ INSERT INTO INVOICE_REGISTRATION (
     UPD_PROG, -- 更新プログラム
     INV_REG_NUM, -- インボイス登録番号
     SUP_NAME, -- 取引先名
+    SUP_CATEGORY, -- 店舗分類
     TAX_FLAG, -- 税区分
     CRE_DT, -- 登録日
     CRE_TM, -- 登録時刻
@@ -19,6 +20,7 @@ INSERT INTO INVOICE_REGISTRATION (
     %(UPD_PROG)s,
     %(INV_REG_NUM)s,
     %(SUP_NAME)s,
+    %(SUP_CATEGORY)s,
     %(TAX_FLAG)s,
     %(CRE_DT)s,
     %(CRE_TM)s,
