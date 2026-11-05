@@ -14,6 +14,8 @@ from src.common.functions.response import response
 class MasterDataBase(BaseRestApi):
     """マスタAPI間で共有するDB操作。"""
 
+    _invoice_schema_ready = False
+
     def __init__(self, db_path=None):
         """
         クラスを初期化する。
@@ -26,6 +28,17 @@ class MasterDataBase(BaseRestApi):
         """
         super().__init__(class_name=self.__class__.__name__, db_path=db_path)
         self.logo_storage = SupplierLogoStorage()
+        self.ensure_invoice_schema()
+
+    def ensure_invoice_schema(self):
+        """店舗分類列を既存環境へ追加する。"""
+        if MasterDataBase._invoice_schema_ready:
+            return
+        # 2026-11-05 Codex: 既存店舗を保持したまま、一覧の分類・絞り込みに使う列を追加する。
+        self.database.execute(
+            self.database.read_sql("ALTER_INVOICE_REGISTRATION_SUP_CATEGORY", location=__file__)
+        )
+        MasterDataBase._invoice_schema_ready = True
 
     def validate_body(self, request_dict):
         """
@@ -326,7 +339,7 @@ class MasterDataBase(BaseRestApi):
 
     def update_invoice(self, body, user_id):
         """
-        インボイス登録マスタの取引先名、税区分、画像を更新する。
+        インボイス登録マスタの取引先名、店舗分類、税区分、画像を更新する。
 
         Args:
             body (Any): リクエスト本文。
@@ -338,6 +351,7 @@ class MasterDataBase(BaseRestApi):
         invoice_number = body.get("invoiceRegistrationNumber")
         params = {
             "SUP_NAME": body.get("supplierName"),
+            "SUP_CATEGORY": str(body.get("supplierCategory") or "その他").strip() or "その他",
             "TAX_FLAG": normalize_tax_flag(body.get("taxFlag")),
             "INV_REG_NUM": invoice_number,
             "USER_ID": user_id,
@@ -375,6 +389,7 @@ class MasterDataBase(BaseRestApi):
             "invoiceRegistrationNumber": row.get("INV_REG_NUM"),
             "supplierImage": supplier_logo,
             "supplierName": row.get("SUP_NAME"),
+            "supplierCategory": row.get("SUP_CATEGORY") or "その他",
             "taxFlag": normalize_tax_flag(row.get("TAX_FLAG")),
         }
 

@@ -35,6 +35,7 @@ class PostgresqlRow(dict):
         "requestcount": "requestCount",
         "supplierlogo": "supplierLogo",
         "suppliername": "supplierName",
+        "suppliercategory": "supplierCategory",
         "salarycategoryname": "salaryCategoryName",
         "taxflag": "taxFlag",
         "taxrate": "taxRate",

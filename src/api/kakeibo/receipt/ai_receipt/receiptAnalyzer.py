@@ -294,8 +294,8 @@ def category_tax_rate_map(categories: dict) -> dict[tuple[str, str], float]:
 
 def fallback_category(item_name: str, pairs: set[tuple[str, str]]) -> tuple[str, str]:
     """
-    AI が未分類を返した場合の最低限の補正。
-    ここでは小票で頻出する食品・酒・レジ袋だけを強く補正する。
+    AI が分類できなかった場合の最低限の補正。
+    ここではレシートで頻出する食品・酒・レジ袋だけを強く補正する。
     """
     name = str(item_name or "")
     rules = [
@@ -313,7 +313,10 @@ def fallback_category(item_name: str, pairs: set[tuple[str, str]]) -> tuple[str,
         if any(keyword in name for keyword in keywords) and pair in pairs:
             return pair
 
-    return ("その他", "不明支出") if ("その他", "不明支出") in pairs else ("その他", "未分類")
+    # 2026-11-05 Codex: 推測できない商品は任意の分類へ寄せず、利用者が後から確認できる未分類へ集約する。
+    if ("その他", "未分類") in pairs:
+        return ("その他", "未分類")
+    return next(iter(sorted(pairs)), ("その他", "未分類"))
 
 
 RESTAURANT_KEYWORDS = (
@@ -391,7 +394,7 @@ def build_receipt_prompt(categories: dict) -> str:
 分類は必ず下の分類一覧から選んでください。自由入力は禁止です。
 receiptDetails の各明細は category1/category2/taxRate を必ず入れてください。空文字は禁止です。
 category1 には「■」の分類名、category2 にはその下の項目名を入れてください。
-迷う場合も「未分類」にせず、商品名から最も近い分類を選んでください。
+商品名・店舗・利用場面から合理的に判断できない場合は「その他 > 未分類」を選んでください。
 - 分類は商品名だけでなく、店舗名・業態・レシート全体の利用場面を優先してください。
 - 飲食店、レストラン、ラーメン店、カフェ、ファストフード、居酒屋では、食品名でも「食費 > 外食」を優先してください。
 - スーパー、ドラッグストア、コンビニで購入した食品は、商品名に応じた食品分類を選んでください。
@@ -470,7 +473,7 @@ def build_receipt_category_mapping_prompt(categories: dict) -> str:
 分類は必ず下の分類一覧から選んでください。自由入力は禁止です。
 receiptDetails の各明細は category1/category2/taxRate を必ず入れてください。空文字は禁止です。
 category1 には「■」の分類名、category2 にはその下の項目名を入れてください。
-迷う場合も「未分類」にせず、商品名から最も近い分類を選んでください。
+商品名・店舗・利用場面から合理的に判断できない場合は「その他 > 未分類」を選んでください。
 - 分類は商品名だけでなく、店舗名・業態・レシート全体の利用場面を優先してください。
 - 飲食店のレシートは食品名でも「食費 > 外食」、スーパー等で購入した食品は商品別分類を優先してください。
 
@@ -828,8 +831,9 @@ class GeminiReceiptAnalyzer:
             category2 = clean_category_label(item.get("category2") or item.get("category_2") or item.get("category_3") or "")
             if valid_pairs and (category1, category2) not in valid_pairs:
                 category1, category2 = fallback_category(item_name, valid_pairs)
-            if valid_pairs and (category1, category2) not in valid_pairs and tax_rates:
-                category1, category2 = next(iter(tax_rates.keys()))
+            if valid_pairs and (category1, category2) not in valid_pairs:
+                # 2026-11-05 Codex: マスタ不整合時も辞書順で固定し、実行ごとに分類が変わることを防ぐ。
+                category1, category2 = next(iter(sorted(valid_pairs)))
 
             master_tax_rate = tax_rates.get((category1, category2))
             ai_tax_rate = (

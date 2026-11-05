@@ -1,6 +1,7 @@
 from src.api.kakeibo.receipt.ai_receipt.receiptAnalyzer import (
     APP_CONFIG,
     GeminiReceiptAnalyzer,
+    build_receipt_prompt,
     is_non_item_detail,
     loads_ai_json,
 )
@@ -22,6 +23,7 @@ def categories():
             {"CATEGORY1_NAME": "日用品"},
             {"CATEGORY1_NAME": "交通"},
             {"CATEGORY1_NAME": "食費"},
+            {"CATEGORY1_NAME": "その他"},
         ],
         "category2": [
             {
@@ -43,6 +45,11 @@ def categories():
                 "CATEGORY1_NAME": "食費",
                 "CATEGORY2_NAME": "米・パン・麺",
                 "TAX_RATE": 0.08,
+            },
+            {
+                "CATEGORY1_NAME": "その他",
+                "CATEGORY2_NAME": "未分類",
+                "TAX_RATE": 0.1,
             },
         ],
     }
@@ -173,6 +180,37 @@ def test_supermarket_ramen_keeps_product_category():
 
     detail = result["receiptInfo"]["receiptDetails"][0]
     assert (detail["category1"], detail["category2"]) == ("食費", "米・パン・麺")
+
+
+def test_unknown_item_is_kept_in_other_unclassified():
+    analyzer = GeminiReceiptAnalyzer(api_key="test")
+    result = analyzer.normalize_ai_receipt(
+        {
+            "receiptInfo": {
+                "supplierName": "不明店舗",
+                "totalPrice": 100,
+                "receiptDetails": [{
+                    "itemName": "判別不能商品",
+                    "category1": "存在しない分類",
+                    "category2": "存在しない小分類",
+                    "quantity": 1,
+                    "unitPrice": 100,
+                    "totalPrice": 100,
+                }],
+            }
+        },
+        categories(),
+    )
+
+    detail = result["receiptInfo"]["receiptDetails"][0]
+    assert (detail["category1"], detail["category2"]) == ("その他", "未分類")
+
+
+def test_prompt_allows_other_unclassified_when_category_is_unknown():
+    prompt = build_receipt_prompt(categories())
+
+    assert "合理的に判断できない場合は「その他 > 未分類」" in prompt
+    assert "「未分類」にせず" not in prompt
 
 
 def test_gemini_api_key_can_be_loaded_from_gemini_api_key_config(monkeypatch):
