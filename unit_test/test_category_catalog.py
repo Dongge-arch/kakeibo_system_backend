@@ -88,3 +88,66 @@ def test_registered_supplier_variants_use_the_expected_place_category():
     assert classify_supplier_category("株式会社マツモトキヨシ") == "ドラッグストア"
     assert classify_supplier_category("HANDS") == "総合小売・サービス"
     assert classify_supplier_category("場所登録不要") == "登録不要"
+
+
+def test_legacy_merged_food_category_uses_item_name_first():
+    assert refine_item_category("北海道産たまねぎ", "食費", "野菜・果物", 0.08) == (
+        "食費",
+        "野菜",
+        0.08,
+    )
+    assert refine_item_category("バニラモナカジャンボ", "食費", "菓子・デザート", 0.08) == (
+        "食費",
+        "アイス・デザート",
+        0.08,
+    )
+
+
+def test_legacy_merged_category_uses_safe_fallback_when_item_is_ambiguous():
+    assert refine_item_category("青果", "食費", "野菜・果物", 0.08) == (
+        "食費",
+        "その他食品",
+        0.08,
+    )
+    assert refine_item_category("判別できない雑貨", "日用品", "小型雑貨", 0.10) == (
+        "日用品",
+        "生活雑貨",
+        0.10,
+    )
+
+
+def test_legacy_phone_category_separates_subscription_and_device_accessory():
+    assert refine_item_category("YouTube プレミアム会員", "通信", "携帯電話", 0.10)[:2] == (
+        "通信",
+        "サブスク",
+    )
+    assert refine_item_category("Type C Micro USB ケーブル", "通信", "携帯電話", 0.10)[:2] == (
+        "通信",
+        "端末・周辺機器",
+    )
+
+
+def test_partial_word_matches_do_not_misclassify_historical_items():
+    assert refine_item_category("ワイドパンツ", "日用品", "小型雑貨", 0.10)[:2] == (
+        "日用品",
+        "生活雑貨",
+    )
+    assert refine_item_category("液体ムヒちいかわ", "日用品", "小型雑貨", 0.10)[:2] == (
+        "医療",
+        "薬・処方箋",
+    )
+    assert refine_item_category("アートプライス ぷるぷる", "食費", "菓子・デザート", 0.08)[:2] == (
+        "食費",
+        "菓子",
+    )
+
+
+def test_known_snack_names_override_ingredient_words():
+    assert refine_item_category("やおきん でかにんじん", "食費", "菓子・デザート", 0.08)[:2] == (
+        "食費",
+        "菓子",
+    )
+    assert refine_item_category("ガリガリ君 梨", "食費", "菓子・デザート", 0.08)[:2] == (
+        "食費",
+        "アイス・デザート",
+    )
