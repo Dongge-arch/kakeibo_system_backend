@@ -255,7 +255,8 @@ if exist "%FRONTEND_BUILD_DRIVE%\" (
 
 echo [FRONTEND] Uploading to S3: %FRONTEND_S3_URI%
 for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "FRONTEND_BACKUP_TIMESTAMP=%%T"
-for /f "delims=" %%G in ('git -C "%FRONTEND_DIR%\.." rev-parse --short HEAD') do set "FRONTEND_BACKUP_COMMIT=%%G"
+REM 2026-11-11 Codex: 空白を含むフロントエンドパスでもGitのコミット番号を取得できるよう引用符をエスケープする。
+for /f "delims=" %%G in ('git -C ^"%FRONTEND_DIR%\..^" rev-parse --short HEAD') do set "FRONTEND_BACKUP_COMMIT=%%G"
 set "FRONTEND_BACKUP_URI=%FRONTEND_S3_URI%/bk/%FRONTEND_BACKUP_TIMESTAMP%-%FRONTEND_BACKUP_COMMIT%"
 echo [FRONTEND] Backing up current S3 assets to: %FRONTEND_BACKUP_URI%
 REM 2026-11-11 Codex: 既存bk配下を再帰コピーせず、公開中ファイルだけを世代バックアップする。
