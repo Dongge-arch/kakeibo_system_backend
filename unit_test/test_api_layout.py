@@ -211,8 +211,8 @@ def test_auto_linkage_update_and_delete_share_one_api():
 def test_every_sam_function_has_one_handler_and_log_group():
     template = (ROOT / "template.yaml").read_text(encoding="utf-8")
     packages = re.findall(r"CodeUri: dist_lambda/function/([a-z0-9_]+)", template)
-    assert len(packages) == len(set(packages)) == 56
-    assert template.count("LoggingConfig:") == 56
+    assert len(packages) == len(set(packages)) == 60
+    assert template.count("LoggingConfig:") == 60
     for name in packages:
         sources = [ROOT / folder / name / "lambda_handler.py" for folder in ("lambda_api", "lambda_batch")]
         found = [path for path in sources if path.is_file()]

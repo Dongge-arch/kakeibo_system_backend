@@ -213,6 +213,60 @@ def test_prompt_allows_other_unclassified_when_category_is_unknown():
     assert "「未分類」にせず" not in prompt
 
 
+def test_prompt_prioritizes_amount_after_currency_symbol_and_requires_quantity_evidence():
+    prompt = build_receipt_prompt(categories())
+
+    assert "通貨記号の直後に印字された最初の金額" in prompt
+    assert "quantityEvidence" in prompt
+
+
+def test_quantity_without_printed_evidence_is_reset_to_one():
+    analyzer = GeminiReceiptAnalyzer(api_key="test")
+    result = analyzer.normalize_ai_receipt(
+        {
+            "receiptInfo": {
+                "totalPrice": 208,
+                "receiptDetails": [{
+                    "itemName": "じゃがりこチーズL",
+                    "category1": "食費",
+                    "category2": "米・パン・麺",
+                    "quantity": 6,
+                    "unitPrice": 34.67,
+                    "totalPrice": 208,
+                }],
+            }
+        },
+        categories(),
+    )
+
+    detail = result["receiptInfo"]["receiptDetails"][0]
+    assert detail["quantity"] == 1
+    assert detail["unitPrice"] == 208
+
+
+def test_quantity_with_printed_evidence_is_preserved():
+    analyzer = GeminiReceiptAnalyzer(api_key="test")
+    result = analyzer.normalize_ai_receipt(
+        {
+            "receiptInfo": {
+                "totalPrice": 396,
+                "receiptDetails": [{
+                    "itemName": "缶ビール",
+                    "category1": "その他",
+                    "category2": "未分類",
+                    "quantity": 2,
+                    "quantityEvidence": "2点 × ￥198",
+                    "unitPrice": 198,
+                    "totalPrice": 396,
+                }],
+            }
+        },
+        categories(),
+    )
+
+    assert result["receiptInfo"]["receiptDetails"][0]["quantity"] == 2
+
+
 def test_gemini_api_key_can_be_loaded_from_gemini_api_key_config(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setitem(APP_CONFIG, "ai_receipt", {"gemini_api_key": "from-config"})

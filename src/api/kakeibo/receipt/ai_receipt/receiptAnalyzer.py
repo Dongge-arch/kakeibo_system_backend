@@ -406,6 +406,10 @@ category1 には「■」の分類名、category2 にはその下の項目名を
 - 商品行が税込価格として印字されている場合又は「小計」と「合計」金額が違うの時 taxFlag は "1" にしてください。判断できない場合は "0"。
 - receiptInfo.totalPrice は必ずレシート下部の「合計」「お買上額」「ご請求額」に相当する最終支払前の合計金額を入れてください。「小計」「税額」「お預り」「おつり」「ポイント」は入れないでください。
 - quantity が読めない場合は 1。
+- quantity を 2 以上にしてよいのは、商品行または直後の行に「×2」「2点」「数量 2」「2個」のような購入数量の明記がある場合だけです。商品コード、税率、容量、規格、行番号を数量にしないでください。
+- quantity を 2 以上にした場合は quantityEvidence に根拠となった印字文字列をそのまま入れてください。根拠がない場合は quantity=1、quantityEvidence="" にしてください。
+- 商品行に「¥」または「￥」がある場合、通貨記号の直後に印字された最初の金額をその商品の価格として読み取ってください。通貨記号より左側の数字を価格にしないでください。
+- priceEvidence には価格判断に使った「¥1,280」「￥ 198」のような通貨記号を含む印字文字列をそのまま入れてください。通貨記号がないレシートでは価格欄の印字を入れてください。
 - discount がない場合は 0。値引きがある場合、discount は必ず正の整数で入れてください。マイナス値は禁止です。
 - 商品の直下や近くに「値引」「割引」「50%」「40%」「30%」などの行がある場合は、別明細に分けず、直前の商品明細の discount に入れてください。
 - unitPrice は taxFlag に対応する値引き前の商品単価、totalPrice は値引き後の税込明細金額を入れてください。
@@ -439,7 +443,9 @@ category1 には「■」の分類名、category2 にはその下の項目名を
         "category2": "",
         "taxRate": 0.1,
         "quantity": 1,
+        "quantityEvidence": "",
         "unitPrice": 0,
+        "priceEvidence": "",
         "discount": 0,
         "totalPrice": 0,
         "taxExcludedUnitPrice": 0,
@@ -813,7 +819,12 @@ class GeminiReceiptAnalyzer:
                 else item.get("amount")
             )
             quantity = to_int(item.get("quantity")) or 1
+            quantity_evidence = str(item.get("quantityEvidence") or item.get("quantity_evidence") or "").strip()
             raw_unit_price = optional_int(item.get("unitPrice") or item.get("unit_price"))
+            # 2026-11-11 Codex: 数量根拠がない複数判定は、税率・商品コード・容量の誤読として1件へ戻す。
+            if quantity > 1 and not quantity_evidence:
+                quantity = 1
+                raw_unit_price = total_price
             # 2026-07-03 Codex: If AI only returns a line total, derive unit price from quantity.
             unit_price = raw_unit_price if raw_unit_price is not None else (total_price / quantity if quantity else total_price)
 

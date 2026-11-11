@@ -16,9 +16,17 @@ AUTO_INPUT_BATCHES = {
     "NITORI": "src.batch.kakeibo.auto_input_targets.auto_input_nitori.autoInput_Nitori:AutoInput_Nitori",
     "CAINZ": "src.batch.kakeibo.auto_input_targets.auto_input_cainz.autoInput_Cainz:AutoInput_Cainz",
     "MUJI": "src.batch.kakeibo.auto_input_targets.auto_input_muji.autoInput_Muji:AutoInput_Muji",
+    "GMAIL": "src.batch.kakeibo.auto_input_targets.auto_input_gmail.gmailReceiptImporter:GmailReceiptImporter",
+    "MERCARI_MARKET": "src.batch.kakeibo.auto_input_targets.auto_input_financial.autoInput_Financial:AutoInput_MercariMarket",
+    "MERCARD": "src.batch.kakeibo.auto_input_targets.auto_input_financial.autoInput_Financial:AutoInput_Mercard",
+    "PAYPAY": "src.batch.kakeibo.auto_input_targets.auto_input_financial.autoInput_Financial:AutoInput_PayPay",
+    "MUFG_BANK": "src.batch.kakeibo.auto_input_targets.auto_input_financial.autoInput_Financial:AutoInput_MufgBank",
+    "MDC": "src.batch.kakeibo.auto_input_targets.auto_input_financial.autoInput_Financial:AutoInput_Mdc",
 }
 
-AWS_AUTO_INPUT_CONNECTIONS = ("ETC",)
+AWS_AUTO_INPUT_CONNECTIONS = (
+    "ETC", "GMAIL", "MERCARI_MARKET", "MERCARD", "PAYPAY", "MUFG_BANK", "MDC",
+)
 SERVER_AUTO_INPUT_CONNECTIONS = ("BELC", "AMAZON", "NITORI", "CAINZ", "MUJI")
 
 
@@ -87,6 +95,17 @@ class AutoInputScheduler(BaseAutoInput):
                 )
             status_code = int(batch_result.get("statusCode", 500))
             body = batch_result.get("body") or {}
+            if body.get("status") == "SERVER_REQUIRED":
+                # 2026-11-11 Codex: 定期実行でもAWS接続不可時はArmbian共有キューへ切り替える。
+                from src.api.kakeibo.settings.auto_linkage.autoLinkageBase import AutoLinkageBase
+
+                body = AutoLinkageBase().queue_server_job(
+                    connection_type,
+                    {"connectionType": connection_type, "runAction": "start"},
+                    user_id,
+                    str(body.get("reason") or body.get("message") or "AWS接続不可"),
+                )
+                status_code = 202
             if status_code == 503:
                 unavailable_connections.add(connection_type)
             batch_failed_count = int(body.get("failed") or 0)

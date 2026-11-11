@@ -2,6 +2,8 @@ param(
     [string]$HostAlias = "kakeibo-server",
     [string]$RemoteDir = "/home/armbian/home-kakeibo-batch",
     [string]$ArchivePath = "$env:TEMP\home-kakeibo-batch.tar.gz",
+    [string]$SshConfigFile = "NUL",
+    [string]$IdentityFile = "$env:USERPROFILE\.ssh\id_ed25519",
     [switch]$NoSudo
 )
 
@@ -9,8 +11,8 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $repoRoot
-$SshOptions = @("-o", "ConnectTimeout=10")
-$SshTtyOptions = @("-tt", "-o", "ConnectTimeout=10")
+$SshOptions = @("-F", $SshConfigFile, "-i", $IdentityFile, "-o", "ConnectTimeout=10")
+$SshTtyOptions = @("-tt", "-F", $SshConfigFile, "-i", $IdentityFile, "-o", "ConnectTimeout=10")
 
 if (Test-Path $ArchivePath) {
     Remove-Item -LiteralPath $ArchivePath -Force

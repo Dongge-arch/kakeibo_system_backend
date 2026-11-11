@@ -46,7 +46,9 @@ def test_scheduler_separates_aws_and_server_connections():
         autoInputScheduler.AutoInputScheduler
     )
 
-    assert scheduler.resolve_target_connections({}) == ("ETC",)
+    assert scheduler.resolve_target_connections({}) == (
+        "ETC", "GMAIL", "MERCARI_MARKET", "MERCARD", "PAYPAY", "MUFG_BANK", "MDC",
+    )
     assert scheduler.resolve_target_connections({"source": "armbian-server"}) == (
         "BELC",
         "AMAZON",

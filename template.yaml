@@ -43,6 +43,19 @@ Parameters:
     Type: String
     Default: ""
     Description: Optional S3 bucket name used to store supplier logos.
+  GmailOAuthClientId:
+    Type: String
+    Default: ""
+    Description: Google OAuth client ID for Gmail read-only integration.
+  GmailOAuthClientSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Google OAuth client secret for Gmail read-only integration.
+  GmailOAuthRedirectUri:
+    Type: String
+    Default: ""
+    Description: API callback URL registered in Google Cloud Console.
 
 Conditions:
   HasSupplierLogoBucket: !Not [!Equals [!Ref SupplierLogoBucketName, ""]]
@@ -85,6 +98,9 @@ Globals:
         KAKEIBO_API_KEY: !Ref KakeiboApiKey
         FRONTEND_CORS_ORIGIN: !Ref FrontendCorsOrigin
         SUPPLIER_LOGO_S3_BUCKET: !Ref SupplierLogoBucketName
+        GMAIL_OAUTH_CLIENT_ID: !Ref GmailOAuthClientId
+        GMAIL_OAUTH_CLIENT_SECRET: !Ref GmailOAuthClientSecret
+        GMAIL_OAUTH_REDIRECT_URI: !Ref GmailOAuthRedirectUri
     Layers:
       - !Ref HomeKakeiboLayerArn
 
@@ -123,7 +139,7 @@ Resources:
       Targets:
         - Arn: !GetAtt AutoInputScheduledFunction.Arn
           Id: HomeKakeiboAutoInputScheduledFunction
-          Input: '{"body":{"connectionTypes":["ETC"]}}'
+          Input: '{"body":{"connectionTypes":["ETC","GMAIL","MERCARI_MARKET","MERCARD","PAYPAY","MUFG_BANK","MDC"]}}'
 
   AutoInputScheduledPermission:
     Type: AWS::Lambda::Permission
@@ -1472,6 +1488,67 @@ Resources:
             Path: /auto-linkages/{connection_type}
             Method: DELETE
 
+  ExpenseSourceListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-expense-source-list
+      Handler: lambda_handler.lambda_handler
+      CodeUri: dist_lambda/function/expense_source_list
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref ExpenseSourceListLogGroup
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /expense-sources
+            Method: GET
+  ExpenseSourceUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-expense-source-update
+      Handler: lambda_handler.lambda_handler
+      CodeUri: dist_lambda/function/expense_source_update
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref ExpenseSourceUpdateLogGroup
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /expense-sources/actions
+            Method: POST
+  GmailOAuthStartFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-gmail-oauth-start
+      Handler: lambda_handler.lambda_handler
+      CodeUri: dist_lambda/function/gmail_oauth_start
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref GmailOAuthStartLogGroup
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages/gmail/oauth/start
+            Method: POST
+  GmailOAuthCallbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: home-kakeibo-gmail-oauth-callback
+      Handler: lambda_handler.lambda_handler
+      CodeUri: dist_lambda/function/gmail_oauth_callback
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref GmailOAuthCallbackLogGroup
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /auto-linkages/gmail/oauth/callback
+            Method: GET
+
   MealApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -1778,6 +1855,26 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: /home-kakeibo/api/kakeibo/auto-linkage/auto-linkage-delete
+      RetentionInDays: 30
+  ExpenseSourceListLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /home-kakeibo/api/kakeibo/expense-source/list
+      RetentionInDays: 30
+  ExpenseSourceUpdateLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /home-kakeibo/api/kakeibo/expense-source/update
+      RetentionInDays: 30
+  GmailOAuthStartLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /home-kakeibo/api/kakeibo/auto-linkage/gmail-oauth-start
+      RetentionInDays: 30
+  GmailOAuthCallbackLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /home-kakeibo/api/kakeibo/auto-linkage/gmail-oauth-callback
       RetentionInDays: 30
   MealApiLogGroup:
     Type: AWS::Logs::LogGroup

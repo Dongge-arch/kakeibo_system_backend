@@ -3,6 +3,8 @@
 
 """出費自動連携先と会員アカウントを管理するAPI。"""
 
+import json
+
 from src.common.api_utils import now_ymd_hms
 from src.common.base import BaseRestApi
 from src.common.exception.error import Error
@@ -16,6 +18,11 @@ from src.batch.kakeibo.auto_input_targets.auto_input_suica.autoInput_Suica impor
 )
 from src.batch.kakeibo.auto_input_targets.auto_input_etc.autoInput_Etc import AutoInput_Etc
 from src.batch.kakeibo.auto_input_targets.auto_input_amazon.autoInput_Amazon import AutoInput_Amazon
+from src.batch.kakeibo.auto_input_targets.auto_input_financial.autoInput_Financial import (
+    AutoInput_Financial,
+    FINANCIAL_SERVICES,
+)
+from src.api.kakeibo.expense_source.expenseSourceBase import ExpenseSourceBase
 
 
 SUPPORTED_PLACES = (
@@ -215,9 +222,81 @@ SUPPORTED_PLACES = (
         "supportStatus": "planned",
         "automationMode": "planned",
     },
+    {
+        "connectionType": "MERCARI_MARKET",
+        "supplierName": "株式会社メルカリ",
+        "invoiceRegistrationNumber": "MERCARI",
+        "group": "shopping",
+        "displayName": "メルカリ購入",
+        "historyName": "メルカリ購入履歴",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "aws",
+        "authMode": "password",
+    },
+    {
+        "connectionType": "MERCARD",
+        "supplierName": "株式会社メルペイ",
+        "invoiceRegistrationNumber": "",
+        "group": "payment",
+        "displayName": "メルカード",
+        "historyName": "メルカード利用明細",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "aws",
+        "authMode": "password",
+    },
+    {
+        "connectionType": "PAYPAY",
+        "supplierName": "PayPay株式会社",
+        "invoiceRegistrationNumber": "",
+        "group": "payment",
+        "displayName": "PayPay",
+        "historyName": "PayPay取引履歴",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "aws",
+        "authMode": "password",
+    },
+    {
+        "connectionType": "MUFG_BANK",
+        "supplierName": "株式会社三菱UFJ銀行",
+        "invoiceRegistrationNumber": "",
+        "group": "bank",
+        "displayName": "三菱UFJ銀行口座",
+        "historyName": "三菱UFJダイレクト入出金明細",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "aws",
+        "authMode": "password",
+    },
+    {
+        "connectionType": "MDC",
+        "supplierName": "三菱UFJニコス株式会社",
+        "invoiceRegistrationNumber": "",
+        "group": "payment",
+        "displayName": "My Digital Connect",
+        "historyName": "三菱UFJカード利用明細",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "aws",
+        "authMode": "password",
+    },
+    {
+        "connectionType": "GMAIL",
+        "supplierName": "Google Gmail",
+        "invoiceRegistrationNumber": "",
+        "group": "other",
+        "displayName": "Gmail電子レシート",
+        "historyName": "当日受信メール",
+        "supportStatus": "supported",
+        "automationMode": "automatic",
+        "executionLocation": "aws",
+        "authMode": "oauth",
+    },
 )
 
-SUPPORTED_RUN_CONNECTIONS = {"BELC", "ETC", "AMAZON"} | TRANSPORT_IC_CONNECTIONS
+SUPPORTED_RUN_CONNECTIONS = {"BELC", "ETC", "AMAZON", "GMAIL"} | set(FINANCIAL_SERVICES) | TRANSPORT_IC_CONNECTIONS
 
 
 class AutoLinkageBase(BaseRestApi):
@@ -263,6 +342,8 @@ class AutoLinkageBase(BaseRestApi):
         Returns:
             Any: 処理結果。
         """
+        # 2026-11-11 Codex: OAuth状態も一覧へ含めるため、連携共通表を先に冪等作成する。
+        ExpenseSourceBase().ensure_schema()
         # 新規ユーザーでも画面に連携先を表示できるよう、未作成の初期レコードを補完する。
         self.ensure_default_places(user_id)
         result = []
@@ -373,7 +454,7 @@ class AutoLinkageBase(BaseRestApi):
         current = self.find_row(place["connectionType"], user_id)
         if current and not password:
             password = self.value(current, "LOGIN_PW_1", "login_pw_1") or ""
-        if enabled and (not account_id or not password):
+        if enabled and place.get("authMode") != "oauth" and (not account_id or not password):
             raise Error(
                 status_code=400,
                 error_code="1000062",
@@ -546,7 +627,9 @@ class AutoLinkageBase(BaseRestApi):
         if place["connectionType"] not in SUPPORTED_RUN_CONNECTIONS:
             return self.not_implemented_response(place)
         row = self.find_row(place["connectionType"], user_id)
-        if not row or not self.value(row, "LOGIN_ID_1", "login_id_1") or not self.value(row, "LOGIN_PW_1", "login_pw_1"):
+        if place.get("authMode") != "oauth" and (
+            not row or not self.value(row, "LOGIN_ID_1", "login_id_1") or not self.value(row, "LOGIN_PW_1", "login_pw_1")
+        ):
             raise Error(
                 status_code=400,
                 error_code="1000062",
@@ -598,6 +681,37 @@ class AutoLinkageBase(BaseRestApi):
                 "registeredCount": int(body_result.get("registered") or 0),
                 "failedCount": int(body_result.get("failed") or 0),
             })
+
+        if place["connectionType"] in FINANCIAL_SERVICES:
+            result = AutoInput_Financial(place["connectionType"]).call(
+                body={
+                    "action": body.get("runAction") or "start",
+                    "challengeId": body.get("challengeId") or "",
+                    "verificationCode": body.get("verificationCode") or body.get("captcha") or "",
+                },
+                headers=request_dict.get("headers") or {},
+            )
+            body_result = result.get("body") or {}
+            if body_result.get("status") == "SERVER_REQUIRED":
+                queued = self.queue_server_job(
+                    place["connectionType"],
+                    body,
+                    user_id,
+                    str(body_result.get("reason") or body_result.get("message") or "AWS接続不可"),
+                )
+                return response(202, queued)
+            return response(result.get("statusCode", 200), body_result)
+
+        if place["connectionType"] == "GMAIL":
+            from src.batch.kakeibo.auto_input_targets.auto_input_gmail.gmailReceiptImporter import (
+                GmailReceiptImporter,
+            )
+
+            result = GmailReceiptImporter().call(
+                body={"action": "run"},
+                headers=request_dict.get("headers") or {},
+            )
+            return response(result.get("statusCode", 200), result.get("body") or {})
 
         # Suicaは画像認証を含む既存の手動実行フローを使用する。
         # 2026-07-13 Codex: Suica以外の交通系ICカードもカード種別を渡して同じ手動フローで実行する。
@@ -681,10 +795,18 @@ class AutoLinkageBase(BaseRestApi):
         if place.get("automationMode") != "automatic":
             # 手動専用・準備中サービスはレスポンス上も自動連携OFFとして扱う。
             enabled = False
+        configured = bool(account_id and password_registered)
+        if place.get("authMode") == "oauth":
+            token_rows = self.database.select(
+                """SELECT ID FROM GMAIL_OAUTH_TOKEN
+                   WHERE CRE_USER_ID=%(user_id)s AND REFRESH_TOKEN IS NOT NULL AND DEL_FLAG=0 LIMIT 1""",
+                {"user_id": self.value(row, "CRE_USER_ID", "cre_user_id") or ""},
+            )
+            configured = bool(token_rows)
         result = {
             **place,
             # 初期レコードだけでは設定済みにせず、IDとパスワードがそろった場合だけ利用可能とする。
-            "configured": bool(account_id and password_registered),
+            "configured": configured,
             "enabled": enabled,
             "lastLoginStatus": self.value(row, "LAST_LOGIN_STATUS", "last_login_status") or "",
             "lastLoginDate": self.value(row, "LAST_LOGIN_DT", "last_login_dt") or "",
@@ -776,6 +898,21 @@ class AutoLinkageBase(BaseRestApi):
                 "historyName": "Amazon注文履歴",
                 "historyUrl": "https://www.amazon.co.jp/gp/css/order-history?ref_=nav_orders_first",
             }
+        if connection_type in FINANCIAL_SERVICES:
+            service = FINANCIAL_SERVICES[connection_type]
+            return {
+                "loginName": f"{service.display_name} ログイン",
+                "loginUrl": service.login_url,
+                "historyName": f"{service.display_name}履歴",
+                "historyUrl": service.history_url,
+            }
+        if connection_type == "GMAIL":
+            return {
+                "loginName": "Google OAuth",
+                "loginUrl": "",
+                "historyName": "当日受信メール",
+                "historyUrl": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+            }
         if connection_type == "NITORI":
             return {
                 "loginName": "ニトリ ログイン",
@@ -825,6 +962,78 @@ class AutoLinkageBase(BaseRestApi):
             "connectionType": place["connectionType"],
             "supportStatus": place.get("supportStatus") or "planned",
         })
+
+    def queue_server_job(self, connection_type, body, user_id, reason):
+        """AWSから取得できない連携処理をArmbian Server用キューへ登録する。"""
+        ExpenseSourceBase().ensure_schema()
+        ymd, hms = now_ymd_hms()
+        requested_job_id = int(body.get("jobId") or 0)
+        if requested_job_id:
+            existing = self.database.select(
+                """SELECT * FROM AUTO_LINKAGE_SERVER_JOB
+                   WHERE ID=%(job_id)s AND CONNECTION_TYPE=%(connection_type)s
+                     AND CRE_USER_ID=%(user_id)s AND DEL_FLAG=0 LIMIT 1""",
+                {"job_id": requested_job_id, "connection_type": connection_type, "user_id": user_id},
+            )
+        else:
+            existing = self.database.select(
+                """SELECT * FROM AUTO_LINKAGE_SERVER_JOB
+                   WHERE CONNECTION_TYPE=%(connection_type)s AND CRE_USER_ID=%(user_id)s
+                     AND STATUS IN ('PENDING', 'RUNNING', 'OTP_REQUIRED') AND DEL_FLAG=0
+                   ORDER BY ID DESC LIMIT 1""",
+                {"connection_type": connection_type, "user_id": user_id},
+            )
+        if existing:
+            job = existing[0]
+            job_id = int(self.value(job, "ID", "id"))
+            result_json = json.loads(self.value(job, "RESULT_JSON", "result_json") or "{}")
+            verification_code = str(body.get("verificationCode") or body.get("captcha") or "").strip()
+            job_status = str(self.value(job, "STATUS", "status") or "")
+            if requested_job_id and job_status in {"COMPLETED", "FAILED"}:
+                if job_status == "FAILED":
+                    return {
+                        "ok": False,
+                        "status": "FAILED",
+                        "jobId": job_id,
+                        "message": self.value(job, "ERROR_MESSAGE", "error_message") or "Server処理に失敗しました。",
+                    }
+                return {**result_json, "jobId": job_id}
+            if verification_code:
+                # 2026-11-11 Codex: Server側OTP待ちジョブへ利用者入力を渡し、同じセッションで再開する。
+                ymd, hms = now_ymd_hms()
+                self.database.update(
+                    """UPDATE AUTO_LINKAGE_SERVER_JOB SET STATUS='PENDING', ACTION='submit',
+                           REQUEST_JSON=%(request_json)s, UPD_PROG='AutoLinkageOtpSubmit',
+                           UPD_DT=%(ymd)s, UPD_TM=%(hms)s, UPD_USER_ID=%(user_id)s
+                       WHERE ID=%(job_id)s AND CRE_USER_ID=%(user_id)s AND DEL_FLAG=0""",
+                    {"request_json": json.dumps(body, ensure_ascii=False), "ymd": ymd, "hms": hms,
+                     "user_id": user_id, "job_id": job_id},
+                )
+                self.database.commit()
+            elif job_status == "OTP_REQUIRED":
+                return {**result_json, "jobId": job_id}
+        else:
+            row = self.database.do_sql_with_retry(
+                """INSERT INTO AUTO_LINKAGE_SERVER_JOB (
+                       CRE_PROG, UPD_PROG, CONNECTION_TYPE, ACTION, REQUEST_JSON, STATUS,
+                       ERROR_MESSAGE, CRE_DT, CRE_TM, UPD_DT, UPD_TM, CRE_USER_ID, UPD_USER_ID
+                   ) VALUES (
+                       'AutoLinkageAwsFallback', 'AutoLinkageAwsFallback', %(connection_type)s,
+                       %(action)s, %(request_json)s, 'PENDING', %(reason)s, %(ymd)s, %(hms)s,
+                       %(ymd)s, %(hms)s, %(user_id)s, %(user_id)s
+                   ) RETURNING ID""",
+                {"connection_type": connection_type, "action": body.get("runAction") or "start",
+                 "request_json": json.dumps(body, ensure_ascii=False), "reason": reason[:1000],
+                 "ymd": ymd, "hms": hms, "user_id": user_id},
+            ).fetchone()
+            job_id = int(row["id"])
+            self.database.commit()
+        return {
+            "ok": True,
+            "status": "SERVER_QUEUED",
+            "jobId": job_id,
+            "message": "AWSから接続できないため、Armbian Serverへ処理を引き継ぎました。",
+        }
 
     @staticmethod
     def value(row, *keys):

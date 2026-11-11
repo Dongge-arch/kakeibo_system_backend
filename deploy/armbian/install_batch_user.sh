@@ -48,7 +48,24 @@ xvfb-run -a .venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_ru
 EOF
 chmod +x "${RUN_SCRIPT}"
 
+QUEUE_SCRIPT="${APP_DIR}/run_server_queue.sh"
+cat > "${QUEUE_SCRIPT}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd "${APP_DIR}"
+set -a
+[ -f "${ENV_FILE}" ] && . "${ENV_FILE}"
+set +a
+export KAKEIBO_LOG_DIR="${LOG_DIR}"
+exec 9>"${APP_DIR}/.server-queue.lock"
+flock -n 9 || exit 0
+xvfb-run -a .venv/bin/python -m src.batch.kakeibo.auto_input_scheduler.server_job_runner >> "${LOG_DIR}/server-queue.log" 2>&1
+EOF
+chmod +x "${QUEUE_SCRIPT}"
+
 # 2026-07-15 Codex: sudoなし環境でも毎日0時に同期できるよう、ユーザーcrontabで起動する。
-(crontab -l 2>/dev/null | grep -v "${CRON_MARKER}" || true; echo "0 0 * * * ${RUN_SCRIPT} # ${CRON_MARKER}") | crontab -
+(crontab -l 2>/dev/null | grep -v "${CRON_MARKER}" | grep -v "home-kakeibo-server-queue" || true; \
+ echo "0 0 * * * ${RUN_SCRIPT} # ${CRON_MARKER}"; \
+ echo "* * * * * ${QUEUE_SCRIPT} # home-kakeibo-server-queue") | crontab -
 
 crontab -l | grep "${CRON_MARKER}" || true
