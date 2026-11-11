@@ -29,6 +29,10 @@ class ExpenseSourceBase(BaseRestApi):
         super().__init__(class_name=self.__class__.__name__, db_path=db_path)
         self.ensure_schema()
 
+    def main(self, request_dict):
+        """共通処理専用クラスを直接APIとして実行した場合は明示的に拒否する。"""
+        raise NotImplementedError("ExpenseSourceBaseは共通処理専用です。")
+
     def ensure_schema(self):
         """出費源、照合、Serverキュー、Gmail OAuth用の表を作成する。"""
         if ExpenseSourceBase._schema_ready:
