@@ -254,7 +254,18 @@ if exist "%FRONTEND_BUILD_DRIVE%\" (
 )
 
 echo [FRONTEND] Uploading to S3: %FRONTEND_S3_URI%
-aws s3 sync "%FRONTEND_DIR%\dist" "%FRONTEND_S3_URI%" --region "%AWS_REGION%" --delete
+for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "FRONTEND_BACKUP_TIMESTAMP=%%T"
+for /f "delims=" %%G in ('git -C "%FRONTEND_DIR%\.." rev-parse --short HEAD') do set "FRONTEND_BACKUP_COMMIT=%%G"
+set "FRONTEND_BACKUP_URI=%FRONTEND_S3_URI%/bk/%FRONTEND_BACKUP_TIMESTAMP%-%FRONTEND_BACKUP_COMMIT%"
+echo [FRONTEND] Backing up current S3 assets to: %FRONTEND_BACKUP_URI%
+REM 2026-11-11 Codex: 既存bk配下を再帰コピーせず、公開中ファイルだけを世代バックアップする。
+aws s3 sync "%FRONTEND_S3_URI%" "%FRONTEND_BACKUP_URI%" --region "%AWS_REGION%" --exclude "bk/*"
+if errorlevel 1 (
+    endlocal
+    exit /b 1
+)
+REM 2026-11-11 Codex: --delete実行時も世代バックアップを削除対象から除外する。
+aws s3 sync "%FRONTEND_DIR%\dist" "%FRONTEND_S3_URI%" --region "%AWS_REGION%" --delete --exclude "bk/*"
 if errorlevel 1 (
     endlocal
     exit /b 1
